@@ -1,0 +1,21 @@
+# @package _global_
+dataset:
+  path: /home/pengys/Data/gen4/
+wandb:
+  project_name: SRVT
+  group_name: 1mpx
+hardware:
+  gpus: [1]
+  num_workers:
+    train: 0
+    eval: 0
+batch_size:
+  train: 1
+  eval: 1
+benchmark: True
+benchmark_only: True
+use_test_set: True
+validation:
+  val_check_interval: 10000
+training:
+  learning_rate: 0.002

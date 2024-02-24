@@ -1,0 +1,7 @@
+defaults:
+  - experiment/gen4/tiny
+  - general
+  - overrides
+  - dataset: gen4
+  - model: rnndet
+  - optional model/dataset: ${model}_${dataset}

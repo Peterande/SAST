@@ -1,0 +1,9 @@
+# @package _global_
+defaults:
+  - default
+
+model:
+  backbone:
+    embed_dim: 128
+  fpn:
+    depth: 0.11

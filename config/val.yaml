@@ -1,0 +1,22 @@
+defaults:
+  - experiment/gen4/base
+  - general
+  - overrides
+  - dataset: gen4
+  - model: rnndet
+  - _self_
+
+checkpoint: /home/pengys/Code/SRVT_V2/checkpoints/4.0/4_477.ckpt
+hardware:
+  num_workers:
+    eval: 1
+  gpus: 0 # GPU idx (multi-gpu not supported for validation)
+batch_size:
+  eval: 1
+training:
+  precision: 16
+validation:
+  precision: 16
+model:
+  postprocess:
+    confidence_threshold: 0.3
