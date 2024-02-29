@@ -1,6 +1,6 @@
 from omegaconf import DictConfig
 
-from .maxvit_rnn import RNNDetector as MaxViTRNNDetector
+from .sast_rnn import RNNDetector as MaxViTRNNDetector
 
 
 def build_recurrent_backbone(backbone_cfg: DictConfig):

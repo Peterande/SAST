@@ -3,7 +3,7 @@ from omegaconf import DictConfig
 
 from modules.data.genx import DataModule as genx_data_module
 from modules.detection import Module as rnn_det_module
-from benchmark.maxvit import RNNDetector
+from models.detection.recurrent_backbone.sast_rnn import RNNDetector
 
 
 def fetch_model_module(config: DictConfig) -> pl.LightningModule:

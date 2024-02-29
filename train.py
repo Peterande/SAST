@@ -6,7 +6,6 @@ os.environ["OPENBLAS_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
-# os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 import torch
 
@@ -29,19 +28,10 @@ from data.utils.types import DatasetSamplingMode, DataType
 from loggers.utils import get_wandb_logger, get_ckpt_path
 from modules.utils.fetch import fetch_data_module, fetch_model_module
 from pytorch_lightning.loggers import CSVLogger
-import utils.misc as utils
-from tabulate import tabulate
-from utils.benchmark import compute_fps, compute_gflops
 import torch._dynamo.config
 torch._dynamo.config.verbose=True
 import sys
 sys.setrecursionlimit(100000)
-from tqdm import tqdm
-
-def custom_repr(self):
-    return f'{{Tensor:{tuple(self.shape)}}} {original_repr(self)}'
-original_repr = torch.Tensor.__repr__
-torch.Tensor.__repr__ = custom_repr
 
 class MyProgressBar(TQDMProgressBar):
     def init_validation_tqdm(self):
@@ -103,65 +93,24 @@ def main(config: DictConfig):
     # Data
     # ---------------------
     data_module = fetch_data_module(config=config)
-    # p_list = []
-    # data_module.setup(stage='test')
-    # datapipe_list = data_module.test_dataset.datapipe_list
-
-    # for sequence in tqdm(datapipe_list):
-    #     for sample in tqdm(sequence, leave=False):
-    #         for x in sample[DataType.EV_REPR]:
-    #             _, p = non_zero_ratio(x.unsqueeze(0))  # Non-zero ratio p of event representation.
-    #             with tqdm.external_write_mode():
-    #                 print('Non-zero ratio p of event representation:', p.item(), flush=True)
-    #             p_list.append(p)
-
-    # with tqdm.external_write_mode():
-    #     print('Average non-zero ratio p of event representation:', (sum(p_list) / len(p_list)).item())
-    sparsity = 1 - 0.23 # Average non-zero ratio p of event representation.
             
     # ---------------------
     # Logging and Checkpoints
     # ---------------------
     # logger = get_wandb_logger(config)
     logger = CSVLogger(save_dir='./logs/', name='experiment_name')
-    # ckpt_path = '/home/pengys/Code/weights/epoch=000-step=10000-val_AP=0.20.ckpt'
     ckpt_path = None
     if config.wandb.artifact_name is not None:
         ckpt_path = get_ckpt_path(logger, wandb_config=config.wandb)
 
     # ---------------------
-    # Model 384, 640 256, 320
+    # Model
     # ---------------------
     module = fetch_model_module(config=config)
     if ckpt_path is not None and config.wandb.wandb.resume_only_weights:
         print('Resuming only the weights instead of the full training state')
         module = module.load_from_checkpoint(str(ckpt_path), **{'full_config': config}, strict=True)
         ckpt_path = None
-
-    model = fetch_model_module(config=config).cuda()
-    dataset = fetch_data_module(config=config)
-    dataset.setup(stage='test')
-    dataset = dataset.test_dataset
-    # model = torch.compile(model)
-    sparsity = 1 - 1e-6
-    # if utils.is_main_process() and config.benchmark:
-    #     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    #     fps = compute_fps(model, dataset, num_iters=1000000, batch_size=1, sparsity=sparsity)
-    #     bfps = compute_fps(model, dataset, num_iters=10, batch_size=1, sparsity=sparsity)
-    #     if config.benchmark_only:
-    #         gflops = compute_gflops(model, dataset, approximated=True, sparsity=sparsity)
-    #     else:
-    #         gflops = compute_gflops(model, dataset, approximated=True, sparsity=sparsity)
-
-    #     # gflops = '???'
-    #     #model = torch.jit.script(model)
-    #     # model = torch.jit.trace(model, images, strict=False)
-    #     tab_keys = ["#Params(M)", "GFLOPs", "FPS", "B4FPS"]
-    #     tab_vals = [n_params / 10 ** 6, gflops, fps, bfps]
-    #     table = tabulate([tab_vals], headers=tab_keys, tablefmt="pipe",
-    #                     floatfmt=".3f", stralign="center", numalign="center")
-    #     print("===== Benchmark (Crude Approx.) =====\n" + table)
-    # model = None
 
     # ---------------------
     # Callbacks and Misc

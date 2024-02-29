@@ -18,11 +18,6 @@ from utils.evaluation.prophesee.io.box_loading import to_prophesee
 from utils.padding import InputPadderFromShape
 from .utils.detection import BackboneFeatureSelector, EventReprSelector, RNNStates, Mode, mode_2_string, \
     merge_mixed_batches
-from utils.evaluation.prophesee.visualize.vis_utils import LABELMAP_GEN1, LABELMAP_GEN4_SHORT, draw_bboxes
-import pandas as pd
-import cv2
-import copy
-import matplotlib.pyplot as plt
 
 
 class Module(pl.LightningModule):
@@ -36,21 +31,12 @@ class Module(pl.LightningModule):
         self.input_padder = InputPadderFromShape(desired_hw=in_res_hw)
 
         self.mdl = YoloXDetector(self.mdl_config)
-        self.dataframe = pd.DataFrame()
-        self.imgs = []
-        self.tokens = []
-        self.img_tokens = []
-        self.id = 1
-        self.id2 = 0
-        self.plt_num = 0
 
         self.mode_2_rnn_states: Dict[Mode, RNNStates] = {
             Mode.TRAIN: RNNStates(),
             Mode.VAL: RNNStates(),
             Mode.TEST: RNNStates(),
         }
-
-        # self.automatic_optimization=False
 
     def setup(self, stage: Optional[str] = None) -> None:
         dataset_name = self.full_config.dataset.name
@@ -59,7 +45,7 @@ class Module(pl.LightningModule):
         self.mode_2_psee_evaluator: Dict[Mode, Optional[PropheseeEvaluator]] = {}
         self.mode_2_sampling_mode: Dict[Mode, DatasetSamplingMode] = {}
 
-        # self.started_training = True
+        self.started_training = True
 
         dataset_train_sampling = self.full_config.dataset.train.sampling
         dataset_eval_sampling = self.full_config.dataset.eval.sampling
@@ -97,8 +83,6 @@ class Module(pl.LightningModule):
             self.mode_2_batch_size[mode] = None
         else:
             raise NotImplementedError
-        self.iou_loss, self.conf_loss, self.cls_loss = 0, 0, 0
-        self.stage1, self.stage2, self.stage3, self.stage4 = 0, 0, 0, 0
 
     # def forward(self,
     #             event_tensor: th.Tensor,
@@ -153,8 +137,7 @@ class Module(pl.LightningModule):
         backbone_feature_selector = BackboneFeatureSelector()
         ev_repr_selector = EventReprSelector()
         obj_labels = list()
-        P = [0, 0, 0, 0]
-        # opt = self.optimizers()
+        P = 0
         for tidx in range(sequence_len):
             ev_tensors = ev_tensor_sequence[tidx]
             ev_tensors = ev_tensors.to(dtype=self.dtype)
@@ -169,57 +152,10 @@ class Module(pl.LightningModule):
             else:
                 assert self.mode_2_hw[mode] == ev_tensors.shape[-2:]
 
-            backbone_features, states, p, img, tokens_and_scores = self.mdl.forward_backbone(x=ev_tensors,
+            backbone_features, states, p = self.mdl.forward_backbone(x=ev_tensors,
                                                                   previous_states=prev_states,
                                                                   token_mask=token_masks)
-            
-            if img is not None and tokens_and_scores[0][0] is not None:
-                # Remove Padding
-                img = img[:-24, :, :]
-                scores = [x[0] for x in tokens_and_scores]
-                scores[0] = scores[0][:-6, :, :]
-                scores[1] = scores[1][:-3, :, :]
-                # scores[2] = scores[2][:-1, :, :]
-                tokens = [x[1] for x in tokens_and_scores]
-                tokens[0] = tokens[0][:-6, :, :]
-                tokens[1] = tokens[1][:-3, :, :]
-                # tokens[2] = tokens[2][:-1, :, :]  
-
-                # Resize
-
-                scores[0] = cv2.resize(scores[0], img.shape[-2::-1], interpolation=cv2.INTER_NEAREST)
-                scores[1] = cv2.resize(scores[1], img.shape[-2::-1], interpolation=cv2.INTER_NEAREST)
-                # scores[2] = cv2.resize(scores[2], img.shape[-2::-1], interpolation=cv2.INTER_NEAREST)
-
-                tokens[0] = cv2.resize(tokens[0], img.shape[-2::-1], interpolation=cv2.INTER_NEAREST)
-                tokens[1] = cv2.resize(tokens[1], img.shape[-2::-1], interpolation=cv2.INTER_NEAREST)
-                # tokens[2] = cv2.resize(tokens[2], img.shape[-2::-1], interpolation=cv2.INTER_NEAREST)
-
-                horizontal_space_size = 60
-                vertical_space_size = 60
-                height, width, channels = img.shape
-                horizontal_space = 255 * np.ones((height, horizontal_space_size, channels), dtype=img.dtype)
-                vertical_space = 255 * np.ones((vertical_space_size, 3 * width + 2 * horizontal_space_size, channels), dtype=img.dtype)
-
-                if img is not None and tokens_and_scores[0][0] is not None:
-                                           
-                    row1 = np.concatenate([img, horizontal_space, scores[0], horizontal_space, scores[1]], axis=1)
-                    row2 = np.concatenate([img, horizontal_space, tokens[0], horizontal_space, tokens[1]], axis=1)
-                    rows = np.concatenate([vertical_space, row1, vertical_space, row2], axis=0)
-                    self.img_tokens.append(rows)
-                    self.plt_num += 1
-                    if self.plt_num % 10 == 0:
-                        height, width = rows.shape[:2]
-                        plt.figure(figsize=(width / 100, height / 100), dpi=100)
-                        plt.imshow(rows[:, :, ::-1], aspect='auto')
-                        plt.axis('off')
-                        plt.savefig('rows_visualization.png', bbox_inches='tight', pad_inches=0)   
-
-
-            P[0] += (p[0]) / sequence_len
-            P[1] += (p[1]) / sequence_len
-            P[2] += (p[2]) / sequence_len
-            P[3] += (p[3]) / sequence_len
+            P += sum(p) / sequence_len
             prev_states = states
 
             current_labels, valid_batch_indices = sparse_obj_labels[tidx].get_valid_labels_and_batch_indices()
@@ -256,17 +192,15 @@ class Module(pl.LightningModule):
 
         assert losses is not None
         assert 'loss' in losses
-        # self.trainer._logger_connector.progress_bar_metrics['loss'] = self.smooth_loss(losses['loss'].clone().detach(), 3).item()
-        # self.trainer._logger_connector.progress_bar_metrics['iou_loss'] = self.smooth_loss(losses['iou_loss'].clone().detach(), 0).item()
-        # self.trainer._logger_connector.progress_bar_metrics['conf_loss'] = self.smooth_loss(losses['conf_loss'].clone().detach(), 1).item()
-        # self.trainer._logger_connector.progress_bar_metrics['cls_loss'] = self.smooth_loss(losses['cls_loss'].clone().detach(), 2).item()
-        self.smooth_loss(P[0], 1)
-        self.smooth_loss(P[1], 2)
-        self.smooth_loss(P[2], 3)
-        self.smooth_loss(P[3], 4)
-        self.trainer._logger_connector.progress_bar_metrics['S'] = (self.stage1 + self.stage2 + self.stage3 + self.stage4) // 1
-        self.trainer._logger_connector.progress_bar_metrics['N'] = P[0]  + P[1] + P[2] + P[3]
-        self.trainer._logger_connector.progress_bar_metrics['STEPS'] = self.trainer.global_step
+        # self.trainer._logger_connector.progress_bar_metrics['iou_loss'] = self.smooth_loss(losses['iou_loss'].clone().detach(), 1).item()
+        # self.trainer._logger_connector.progress_bar_metrics['conf_loss'] = self.smooth_loss(losses['conf_loss'].clone().detach(), 2).item()
+        # self.trainer._logger_connector.progress_bar_metrics['cls_loss'] = self.smooth_loss(losses['cls_loss'].clone().detach(), 3).item()
+        # self.trainer._logger_connector.progress_bar_metrics['token_num'] = P.clone().detach().item() # self.smooth_loss(P.clone().detach(), 4).item()
+        self.smooth_loss(P, 3)
+
+        self.trainer._logger_connector.progress_bar_metrics['SN'] = self.p_loss // 1
+        self.trainer._logger_connector.progress_bar_metrics['N'] = P // 1
+        self.trainer._logger_connector.progress_bar_metrics['STEP'] = self.trainer.global_step
         # For visualization, we only use the last batch_size items.
         output = {
             ObjDetOutput.LABELS_PROPH: loaded_labels_proph[-batch_size:],
@@ -287,15 +221,6 @@ class Module(pl.LightningModule):
             if self.train_metrics_config.detection_metrics_every_n_steps is not None and \
                     step > 0 and step % self.train_metrics_config.detection_metrics_every_n_steps == 0:
                 self.run_psee_evaluator(mode=mode)
-        # loss = losses['loss'] + P / 10
-        # opt.optimizer.zero_grad()
-        # self.manual_backward(loss)
-        # opt.step()
-        # dict = {}
-        # for name, param in self.named_parameters():
-        #     if 'to_scores' in name:
-        #         print(name, param.grad)
-        #         dict[name] = param
         return output
 
     def _val_test_step_impl(self, batch: Any, mode: Mode) -> Optional[STEP_OUTPUT]:
@@ -306,23 +231,7 @@ class Module(pl.LightningModule):
         ev_tensor_sequence = data[DataType.EV_REPR]
         sparse_obj_labels = data[DataType.OBJLABELS_SEQ]
         is_first_sample = data[DataType.IS_FIRST_SAMPLE]
-        AP = ''
-        if is_first_sample[0] and self.id2 != 0 and len(self.img_tokens) > 0:
-            mode = Mode.TEST
-            print('Testing split No ', self.id2)
-            self.id2 += 1
-            AP = self.run_psee_evaluator(mode=mode, need_return=True)
-            self.mode_2_psee_evaluator[mode].reset_buffer()
-        elif is_first_sample[0] and self.id2 == 0:
-            self.id2 = 1
-        if is_first_sample[0] and len(self.img_tokens) > 0:
-            if float(AP[0:6]) > 55:
-                out = cv2.VideoWriter('vis/videos/4_477_notag/' + str(self.id) + '_' + AP + '.avi', cv2.VideoWriter_fourcc(*'XVID'), 20, self.img_tokens[0].shape[-2::-1])  # 1是帧率，可以根据需要调整
-                for i in range(len(self.img_tokens)):
-                    out.write(self.img_tokens[i])
-                out.release()
-            self.img_tokens = []
-            self.id += 1
+
         self.mode_2_rnn_states[mode].reset(worker_id=worker_id, indices_or_bool_tensor=is_first_sample)
 
         sequence_len = len(ev_tensor_sequence)
@@ -337,8 +246,6 @@ class Module(pl.LightningModule):
         backbone_feature_selector = BackboneFeatureSelector()
         ev_repr_selector = EventReprSelector()
         obj_labels = list()
-        imgs, tokens = [], []
-
         for tidx in range(sequence_len):
             collect_predictions = (tidx == sequence_len - 1) or \
                                   (self.mode_2_sampling_mode[mode] == DatasetSamplingMode.STREAM)
@@ -349,41 +256,8 @@ class Module(pl.LightningModule):
                 self.mode_2_hw[mode] = tuple(ev_tensors.shape[-2:])
             else:
                 assert self.mode_2_hw[mode] == ev_tensors.shape[-2:]
-            
-            ratios = ev_tensors.shape[0] * torch.count_nonzero(ev_tensors, dim=[1, 2, 3]) / ev_tensors.numel()
-            backbone_features, states, index_lens, img, tokens_and_scores = self.mdl.forward_backbone(x=ev_tensors, previous_states=prev_states)
-            # _, _, _, img, tokens_and_scores = self.mdl.forward_backbone(x=ev_tensors, previous_states=None)
-            if img is not None and tokens_and_scores[0][0] is not None:
-                # Remove Padding
-                img = img[:-24, :, :]
-                scores = [x[0] for x in tokens_and_scores]
-                scores[0] = scores[0][:-6, :, :]
-                scores[1] = scores[1][:-3, :, :]
-                scores[2] = scores[2][:-1, :, :]
 
-                tokens = [x[1] for x in tokens_and_scores]
-                tokens[0] = tokens[0][:-6, :, :]
-                tokens[1] = tokens[1][:-3, :, :]
-                tokens[2] = tokens[2][:-1, :, :]  
-
-                # Resize
-                # img = cv2.resize(img, [img.shape[1] // 2, img.shape[0] // 2], interpolation=cv2.INTER_NEAREST)
-                scores[0] = cv2.resize(scores[0], img.shape[-2::-1], interpolation=cv2.INTER_NEAREST)
-                scores[1] = cv2.resize(scores[1], img.shape[-2::-1], interpolation=cv2.INTER_NEAREST)
-                scores[2] = cv2.resize(scores[2], img.shape[-2::-1], interpolation=cv2.INTER_NEAREST)
-                # scores[3] = cv2.resize(scores[3], img.shape[-2::-1], interpolation=cv2.INTER_NEAREST)
-
-                tokens[0] = cv2.resize(tokens[0], img.shape[-2::-1], interpolation=cv2.INTER_NEAREST)
-                tokens[1] = cv2.resize(tokens[1], img.shape[-2::-1], interpolation=cv2.INTER_NEAREST)
-                tokens[2] = cv2.resize(tokens[2], img.shape[-2::-1], interpolation=cv2.INTER_NEAREST)
-                # tokens[3] = cv2.resize(tokens[3], img.shape[-2::-1], interpolation=cv2.INTER_NEAREST)
-
-                horizontal_space_size = 60
-                vertical_space_size = 60
-                height, width, channels = img.shape
-                horizontal_space = 255 * np.ones((height, horizontal_space_size, channels), dtype=img.dtype)
-                vertical_space = 255 * np.ones((vertical_space_size, 4 * width + 3 * horizontal_space_size, channels), dtype=img.dtype)
-                vertical_space = 255 * np.ones((vertical_space_size, 4 * width, channels), dtype=img.dtype)
+            backbone_features, states, _ = self.mdl.forward_backbone(x=ev_tensors, previous_states=prev_states)
             prev_states = states
 
             if collect_predictions:
@@ -396,66 +270,7 @@ class Module(pl.LightningModule):
                     obj_labels.extend(current_labels)
                     ev_repr_selector.add_event_representations(event_representations=ev_tensors,
                                                                selected_indices=valid_batch_indices)
-                    if img is not None and tokens_and_scores[0][0] is not None:
-                        predictions, _ = self.mdl.forward_detect(backbone_features=backbone_features)
-                        pred_processed = postprocess(prediction=predictions,
-                                                    num_classes=self.mdl_config.head.num_classes,
-                                                    conf_thre=self.mdl_config.postprocess.confidence_threshold,
-                                                    nms_thre=self.mdl_config.postprocess.nms_threshold)
-                        loaded_labels_proph, yolox_preds_proph = to_prophesee(copy.deepcopy(current_labels), pred_processed)
-                        label_img, pred_img = np.ascontiguousarray(img), np.ascontiguousarray(img.copy())
-                        draw_bboxes(label_img, loaded_labels_proph[0], labelmap=LABELMAP_GEN4_SHORT, put_score=False)
-                        draw_bboxes(pred_img, yolox_preds_proph[0], labelmap=LABELMAP_GEN4_SHORT)
-                        # pred_img_2x = cv2.resize(pred_img, [pred_img.shape[1] * 2, pred_img.shape[0] * 2], interpolation=cv2.INTER_NEAREST)
-
-                        # row1 = np.concatenate([label_img, horizontal_space, scores[0], 
-                        #                        horizontal_space, scores[1], 
-                        #                        horizontal_space, scores[2]], axis=1)
-                        # row2 = np.concatenate([pred_img, horizontal_space, tokens[0], 
-                        #                        horizontal_space, tokens[1], 
-                        #                        horizontal_space, tokens[2]], axis=1)
-                        # rows = np.concatenate([row1, vertical_space, row2], axis=0)
-                        row1 = np.concatenate([label_img, scores[0], 
-                                            scores[1], 
-                                            scores[2]], axis=1)
-                        row2 = np.concatenate([pred_img, tokens[0], 
-                                            tokens[1], 
-                                            tokens[2]], axis=1)
-                        rows = np.concatenate([row1, vertical_space, row2], axis=0)
-                        self.img_tokens.append(rows)
-                        self.plt_num += 1
-                        # if self.plt_num % 10 == 0:
-                            
-                        #     height, width = rows.shape[:2]
-                        #     plt.figure(figsize=(width / 100, height / 100), dpi=100)
-                        #     plt.imshow(rows[:, :, ::-1], aspect='auto')
-                        #     plt.axis('off')
-                        #     plt.savefig('rows_visualization.png', bbox_inches='tight', pad_inches=0)
-                            
-                elif img is not None and tokens_and_scores[0][0] is not None:
-                    label_img, pred_img = np.ascontiguousarray(img), np.ascontiguousarray(img.copy())
-                    pred_img_2x = cv2.resize(pred_img, [pred_img.shape[1] * 2, pred_img.shape[0] * 2], interpolation=cv2.INTER_NEAREST)
-                    row1 = np.concatenate([label_img, scores[0], 
-                                            scores[1], 
-                                            scores[2]], axis=1)
-                    row2 = np.concatenate([pred_img, tokens[0], 
-                                            tokens[1], 
-                                            tokens[2]], axis=1)
-                    rows = np.concatenate([row1, vertical_space, row2], axis=0)
-                    self.img_tokens.append(rows) 
         self.mode_2_rnn_states[mode].save_states_and_detach(worker_id=worker_id, states=prev_states)
-        # return {ObjDetOutput.SKIP_VIZ: True}
-        # # 将数据添加到 DataFrame 中
-        # ratios_series = pd.Series(ratios.mean().item())
-        # index_lens = [x for x in index_lens]
-        # self.dataframe = pd.concat([self.dataframe, pd.DataFrame({'ratios': ratios_series, 
-        #                                       'index_lens_stage_1': pd.Series(index_lens[0]), 
-        #                                       'index_lens_stage_2': pd.Series(index_lens[1]), 
-        #                                       'index_lens_stage_3': pd.Series(index_lens[2]), 
-        #                                       'index_lens_stage_4': pd.Series(index_lens[3])})])
-
-        
-        # return {ObjDetOutput.SKIP_VIZ: True}
         if len(obj_labels) == 0:
             return {ObjDetOutput.SKIP_VIZ: True}
         selected_backbone_features = backbone_feature_selector.get_batched_backbone_features()
@@ -473,37 +288,25 @@ class Module(pl.LightningModule):
             ObjDetOutput.LABELS_PROPH: loaded_labels_proph[-1],
             ObjDetOutput.PRED_PROPH: yolox_preds_proph[-1],
             ObjDetOutput.EV_REPR: ev_repr_selector.get_event_representations_as_list(start_idx=-1)[0],
-            ObjDetOutput.SKIP_VIZ: False
+            ObjDetOutput.SKIP_VIZ: False,
         }
 
-        self.mode_2_psee_evaluator[mode].add_labels(loaded_labels_proph)
-        self.mode_2_psee_evaluator[mode].add_predictions(yolox_preds_proph)
-            
+        if self.started_training:
+            self.mode_2_psee_evaluator[mode].add_labels(loaded_labels_proph)
+            self.mode_2_psee_evaluator[mode].add_predictions(yolox_preds_proph)
+
         return output
 
-    def smooth_loss(self, step_loss, idx):
-        # if self.trainer.global_step == 0:
-        #     self.iou_loss, self.conf_loss, self.cls_loss, self.p_loss = 0, 0, 0, 0
-        if idx == 1:
-            self.stage1 = (self.stage1 * (self.trainer.global_step) + step_loss) / (self.trainer.global_step + 1)
-        elif idx == 2:
-            self.stage2 = (self.stage2 * (self.trainer.global_step) + step_loss) / (self.trainer.global_step + 1)
-        elif idx == 3:
-            self.stage3 = (self.stage3 * (self.trainer.global_step) + step_loss) / (self.trainer.global_step + 1)
-        elif idx == 4:
-            self.stage4 = (self.stage4 * (self.trainer.global_step) + step_loss) / (self.trainer.global_step + 1)
-        
     def validation_step(self, batch: Any, batch_idx: int) -> Optional[STEP_OUTPUT]:
         return self._val_test_step_impl(batch=batch, mode=Mode.VAL)
 
     def test_step(self, batch: Any, batch_idx: int) -> Optional[STEP_OUTPUT]:
         return self._val_test_step_impl(batch=batch, mode=Mode.TEST)
 
-    def run_psee_evaluator(self, mode: Mode, need_return=False):
+    def run_psee_evaluator(self, mode: Mode):
         psee_evaluator = self.mode_2_psee_evaluator[mode]
         batch_size = self.mode_2_batch_size[mode]
         hw_tuple = self.mode_2_hw[mode]
-        AP = 0
         if psee_evaluator is None:
             warn(f'psee_evaluator is None in {mode=}', UserWarning, stacklevel=2)
             return
@@ -557,15 +360,32 @@ class Module(pl.LightningModule):
                     if 'AP_S' not in key and 'AP_M' not in key and 'AP_L' not in key:
                         value = f"{value * 100:.4f}%" 
                         print(f"{key:<{max_key_length}} | {value}")
-                AP = f"{log_dict['test/AP'] * 100:.4f}%"
+
             psee_evaluator.reset_buffer()
         else:
             warn(f'psee_evaluator has not data in {mode=}', UserWarning, stacklevel=2)
-        if need_return:
-            return AP
 
+    # def smooth_loss(self, step_loss, idx):
+    #     if self.trainer.global_step == 0:
+    #         self.loss = [0] * 5
+    #         self.loss[idx] = step_loss
+    #     else:
+    #         self.loss[idx] = (self.loss[idx] * (self.trainer.global_step) + step_loss) / (self.trainer.global_step + 1)
+    #     return self.loss[idx]
+
+    def smooth_loss(self, step_loss, idx):
+        if self.trainer.global_step == 0:
+            self.iou_loss, self.conf_loss, self.cls_loss, self.p_loss = 0, 0, 0, 0
+        if idx == 0:
+            self.iou_loss = (self.iou_loss * (self.trainer.global_step) + step_loss) / (self.trainer.global_step + 1)
+        elif idx == 1:
+            self.conf_loss = (self.conf_loss * (self.trainer.global_step) + step_loss) / (self.trainer.global_step + 1)
+        elif idx == 2:
+            self.cls_loss = (self.cls_loss * (self.trainer.global_step) + step_loss) / (self.trainer.global_step + 1)
+        elif idx == 3:
+            self.p_loss = (self.p_loss * (self.trainer.global_step) + step_loss) / (self.trainer.global_step + 1)
+        
     def on_train_batch_start(self, batch, batch_idx) -> None:
-        # Display learning rate in pbar
         lr = self.trainer.optimizers[0].param_groups[0]['lr']
         self.trainer._logger_connector.progress_bar_metrics['lr'] = lr
         
@@ -580,17 +400,12 @@ class Module(pl.LightningModule):
 
     def on_validation_epoch_end(self) -> None:
         mode = Mode.VAL
-        excel_file = './validation_logs/val2.xlsx'
-        self.dataframe.to_excel(excel_file, index=False)
-
         if self.started_training:
             assert self.mode_2_psee_evaluator[mode].has_data()
             self.run_psee_evaluator(mode=mode)
 
     def on_test_epoch_end(self) -> None:
         mode = Mode.TEST
-        excel_file = './validation_logs/test2.xlsx'
-        self.dataframe.to_excel(excel_file, index=False)
         assert self.mode_2_psee_evaluator[mode].has_data()
         self.run_psee_evaluator(mode=mode)
 

@@ -1,5 +1,5 @@
 defaults:
-  - experiment/gen4/tiny
+  - experiment/gen4/base
   - general
   - overrides
   - dataset: gen4

@@ -12,37 +12,54 @@ except ImportError:
 
 from data.utils.types import FeatureMap, BackboneFeatures, LstmState, LstmStates
 from models.layers.rnn import DWSConvLSTM2d
-from models.layers.sast.maxvit import (
-    PartitionAttentionCl,
+from models.layers.sast.SAST import (
+    SAST_block,
     nhwC_2_nChw,
-    get_downsample_layer_Cf2Cl,
-    PartitionType)
+    get_downsample_layer_Cf2Cl)
 
 from .base import BaseDetector
-import pytorch_lightning as pl
+import numpy as np
+
+def nChw_2_nhwC(x: torch.Tensor):
+    """N C H W -> N H W C
+    """
+    assert x.ndim == 4
+    return x.permute(0, 2, 3, 1).contiguous()
+
+
+def nhwC_2_nChw(x: torch.Tensor):
+    """N H W C -> N C H W
+    """
+    assert x.ndim == 4
+    return x.permute(0, 3, 1, 2).contiguous()
 
 @torch.no_grad()
 def non_zero_ratio(x: torch.Tensor) -> torch.Tensor:
-    num_nonzero = torch.sum(torch.sum(x != 0, dtype=torch.int16, dim=[1, 2]), dtype=torch.int32, dim=-1)
-    result = x.shape[0] * num_nonzero.float() / x.numel()
-    return result
-
-@torch.no_grad()
-def non_zero_ratio_OLD(x: torch.Tensor) -> torch.Tensor:
-    return x.shape[0] * torch.count_nonzero(x, dim=[1, 2, 3]) / x.numel()
-
+    mask = x.float() 
+    x_down_4 = torch.nn.functional.max_pool2d(mask, kernel_size=4, stride=4)
+    x_down_8 = torch.nn.functional.max_pool2d(x_down_4, kernel_size=2, stride=2)
+    x_down_16 = torch.nn.functional.max_pool2d(x_down_8, kernel_size=2, stride=2)
+    x_down_32 = torch.nn.functional.max_pool2d(x_down_16, kernel_size=2, stride=2)
+    num_nonzero_1 = torch.sum(torch.sum(x_down_4 != 0, dtype=torch.int16, dim=[2]), dtype=torch.int16, dim=-1)
+    num_nonzero_2 = torch.sum(torch.sum(x_down_8 != 0, dtype=torch.int16, dim=[2]), dtype=torch.int16, dim=-1)
+    num_nonzero_3 = torch.sum(torch.sum(x_down_16 != 0, dtype=torch.int16, dim=[2]), dtype=torch.int16, dim=-1)
+    num_nonzero_4 = torch.sum(torch.sum(x_down_32 != 0, dtype=torch.int16, dim=[2]), dtype=torch.int16, dim=-1)
+    result1 = x.shape[0] / x_down_4.numel() * num_nonzero_1.float()
+    result2 = x.shape[0] / x_down_8.numel() * num_nonzero_2.float()
+    result3 = x.shape[0] / x_down_16.numel() * num_nonzero_3.float()
+    result4 = x.shape[0] / x_down_32.numel() * num_nonzero_4.float()
+    return torch.stack((result1, result2, result3, result4), dim=1)
 
 @torch.jit.script
 def get_non_zero_mask(x: torch.Tensor) -> torch.Tensor:
     x = torch.any(x.unsqueeze(-1) != 0, dim=-1)
     return x.float()
 
-class RNNDetector(pl.LightningModule):
-    def __init__(self, full_config: DictConfig):
+class RNNDetector(BaseDetector):
+    def __init__(self, mdl_config: DictConfig):
         super().__init__()
 
         ###### Config ######
-        mdl_config = full_config.model.backbone
         in_channels = mdl_config.input_channels
         embed_dim = mdl_config.embed_dim
         dim_multiplier_per_stage = tuple(mdl_config.dim_multiplier)
@@ -76,18 +93,25 @@ class RNNDetector(pl.LightningModule):
 
         self.stages = nn.ModuleList()
         self.strides = []
+        in_res_h, in_res_w = mdl_config.in_res_hw
+        initial_size = (1, in_res_h, in_res_w)
         for stage_idx, (num_blocks, T_max_chrono_init_stage) in \
                 enumerate(zip(num_blocks_per_stage, T_max_chrono_init_per_stage)):
             spatial_downsample_factor = patch_size if stage_idx == 0 else 2
             stage_dim = self.stage_dims[stage_idx]
             enable_masking_in_stage = enable_masking and stage_idx == 0
+            overload_size = (1, initial_size[1] // spatial_downsample_factor, initial_size[2] // spatial_downsample_factor)
+            enable_lstm = stage_idx != 0
+            initial_size = overload_size
             stage = RNNDetectorStage(dim_in=input_dim,
                                      stage_dim=stage_dim,
                                      spatial_downsample_factor=spatial_downsample_factor,
                                      num_blocks=num_blocks,
                                      enable_token_masking=enable_masking_in_stage,
                                      T_max_chrono_init=T_max_chrono_init_stage,
-                                     stage_cfg=mdl_config.stage)
+                                     stage_cfg=mdl_config.stage,
+                                     overload_size=overload_size,
+                                     enable_lstm=True)
             stride = stride * spatial_downsample_factor
             self.strides.append(stride)
 
@@ -115,14 +139,16 @@ class RNNDetector(pl.LightningModule):
         assert len(prev_states) == self.num_stages
         states: LstmStates = list()
         output: Dict[int, FeatureMap] = {}
+
         r = non_zero_ratio(x)
         x = x.float()
+
         P = []
         for stage_idx, stage in enumerate(self.stages):
-            x, state, p = stage(x, prev_states[stage_idx], token_mask if stage_idx == 0 else None, r)
+            x, state, p = stage(x, prev_states[stage_idx], token_mask if stage_idx == 0 else None, r[:, stage_idx])
             states.append(state)
             stage_number = stage_idx + 1
-            output[stage_number] = x
+            output[stage_number] = state[0]
             P.append(p)
         return output, states, P
 
@@ -133,26 +159,14 @@ class MaxVitAttentionPairCl(nn.Module):
                  attention_cfg: DictConfig,
                  first_block: bool = False):
         super().__init__()
-        self.att_window = PartitionAttentionCl(dim=dim,
-                                               partition_type=PartitionType.WINDOW,
-                                               attention_cfg=attention_cfg,
-                                               skip_first_norm=skip_first_norm,
-                                               first_block=first_block)
-        self.att_grid = PartitionAttentionCl(dim=dim,
-                                             partition_type=PartitionType.GRID,
-                                             attention_cfg=attention_cfg,
-                                             skip_first_norm=False,
-                                             first_block=first_block)
+        self.att = SAST_block(dim=dim,
+                              attention_cfg=attention_cfg,
+                              first_block=first_block)
         self.first_block = first_block
 
-    def forward(self, x: torch.Tensor, pos_emb: nn.Module, index: Optional[Tuple[torch.Tensor, torch.Tensor]], M: Tuple[int, int], r: Tuple[torch.Tensor, torch.Tensor]) -> Tuple[torch.Tensor, ...]:
-        index1, index2 = index
-        M1, M2 = M
-        r1, r2 = r
-        x, p_loss1, index1, M1, r1 = self.att_window(x, pos_emb, index1, M1, r1)
-        x, p_loss2, index2, M2, r2 = self.att_grid(x, pos_emb, index2, M2, r2)
-        return x, p_loss1 + p_loss2, (index1, index2), (M1, M2), (r1, r2)
-
+    def forward(self, x: torch.Tensor, pos_emb: nn.Module, r: torch.Tensor, index_list) -> Tuple[torch.Tensor, ...]:
+        x, p_loss, index_list = self.att(x, pos_emb, r, index_list)
+        return x, p_loss, r, index_list
 
 class PositionEmbeddingSine(nn.Module):
     def __init__(self, num_pos_feats=64, temperature=10000, normalize=False, scale=None, input_size=(128, 128, 128)):
@@ -206,7 +220,9 @@ class RNNDetectorStage(nn.Module):
                  num_blocks: int,
                  enable_token_masking: bool,
                  T_max_chrono_init: Optional[int],
-                 stage_cfg: DictConfig):
+                 stage_cfg: DictConfig,
+                 overload_size: Tuple[int, int, int],
+                 enable_lstm: bool):
         super().__init__()
         assert isinstance(num_blocks, int) and num_blocks > 0
         downsample_cfg = stage_cfg.downsample
@@ -221,9 +237,12 @@ class RNNDetectorStage(nn.Module):
                                         skip_first_norm=i == 0 and self.downsample_cf2cl.output_is_normed(),
                                         attention_cfg=attention_cfg, first_block=i == 0) for i in range(num_blocks)]
         self.att_blocks = nn.ModuleList(blocks)
+        self.lstm = DWSConvLSTM2d(dim=stage_dim,
+                                  dws_conv=lstm_cfg.dws_conv,
+                                  dws_conv_only_hidden=lstm_cfg.dws_conv_only_hidden,
+                                  dws_conv_kernel_size=lstm_cfg.dws_conv_kernel_size,
+                                  cell_update_dropout=lstm_cfg.get('drop_cell_update', 0)) if enable_lstm else None
 
-        initial_size = (384, 640)
-        overload_size = (1, initial_size[0] // spatial_downsample_factor, initial_size[1] // spatial_downsample_factor)
         self.pos_emb = PositionEmbeddingSine(stage_dim // 2, normalize=True, input_size=overload_size)
 
         ###### Mask Token ################
@@ -239,16 +258,21 @@ class RNNDetectorStage(nn.Module):
                 token_mask: Optional[torch.Tensor] = None, r: torch.Tensor = None) \
             -> Tuple[FeatureMap, LstmState, torch.Tensor]:
         x = self.downsample_cf2cl(x)  # N C H W -> N H W C
+        
         if token_mask is not None:
             assert self.mask_token is not None, 'No mask token present in this stage'
             x[token_mask] = self.mask_token
 
         P = 0
-        r = (r, r)
-        index, M = (None, None), (None, None)
+        index_list = None
         for blk in self.att_blocks:
-            x, p_loss, index, M, r = blk(x, self.pos_emb, index, M, r)
+            x, p_loss, r, index_list = blk(x, self.pos_emb, r, index_list)
             P += p_loss
             
         x = nhwC_2_nChw(x)  # N H W C -> N C H W
-        return x, x, P
+        if self.lstm is not None:
+            h_c_tuple = self.lstm(x, h_and_c_previous)
+            x = h_c_tuple[0]
+        else:
+            h_c_tuple = (x, x)
+        return x, h_c_tuple, P

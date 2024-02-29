@@ -23,14 +23,6 @@ from pytorch_lightning.callbacks import ModelSummary
 
 from config.modifier import dynamically_modify_train_config
 from modules.utils.fetch import fetch_data_module, fetch_model_module
-import utils.misc as utils
-from tabulate import tabulate
-from utils.benchmark import compute_fps, compute_gflops
-
-def custom_repr(self):
-    return f'{{Tensor:{tuple(self.shape)}}} {original_repr(self)}'
-original_repr = torch.Tensor.__repr__
-torch.Tensor.__repr__ = custom_repr
 
 @hydra.main(config_path='config', config_name='val', version_base='1.2')
 def main(config: DictConfig):
@@ -66,33 +58,6 @@ def main(config: DictConfig):
     
     module = fetch_model_module(config=config)
     module = module.load_from_checkpoint(str(ckpt_path), **{'full_config': config}, strict=False)
-
-    # A-FLOPs # 256, 320
-    model = fetch_model_module(config=config)
-    model = model.load_from_checkpoint(str(ckpt_path), **{'full_config': config}, strict=False).cuda()
-    dataset = fetch_data_module(config=config)
-    dataset.setup(stage='test')
-    dataset = dataset.test_dataset
-    # model = torch.compile(model)
-    sparsity = 1 - 0.005
-    if utils.is_main_process() and config.benchmark:
-        n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        fps = compute_fps(model, dataset, num_iters=100, batch_size=1, sparsity=sparsity)
-        b32fps = compute_fps(model, dataset, num_iters=10, batch_size=4, sparsity=sparsity)
-        if config.benchmark_only:
-            gflops = compute_gflops(model, dataset, approximated=False, sparsity=sparsity)
-        else:
-            gflops = compute_gflops(model, dataset, approximated=True, sparsity=sparsity)
-
-        # gflops = '???'
-        #model = torch.jit.script(model)
-        # model = torch.jit.trace(model, images, strict=False)
-        tab_keys = ["#Params(M)", "GFLOPs", "FPS", "B4FPS"]
-        tab_vals = [n_params / 10 ** 6, gflops, fps, b32fps]
-        table = tabulate([tab_vals], headers=tab_keys, tablefmt="pipe",
-                        floatfmt=".3f", stralign="center", numalign="center")
-        print("===== Benchmark (Crude Approx.) =====\n" + table)
-    model = None
 
     # ---------------------
     # Callbacks and Misc

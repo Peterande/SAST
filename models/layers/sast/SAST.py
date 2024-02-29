@@ -251,7 +251,7 @@ class SAST_block(nn.Module):
             torch.nn.init.constant_(self.to_controls.weight, 1)
             self.act = nn.ReLU()
 
-        self.amp_value = 1e-3
+        self.amp_value = 2e-4
         self.bounce_value = 1e-3
         self.first_block = first_block
         self.B, self.N, self.dim = None, None, dim
@@ -259,18 +259,18 @@ class SAST_block(nn.Module):
     def window_selection(self, scores: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         B, N, h, w = self.B, self.N, self.partition_size[0], self.partition_size[1]
         temp = h * w
-        norm_window = (torch.norm(scores, dim=[2, 3], p=1) / temp).softmax(-1)  # 0.78%
-        index_window = get_score_index_2d21d(norm_window.view(B, N), 1 / N, self.bounce_value)  # 1.13%
+        norm_window = (torch.norm(scores, dim=[2, 3], p=1) / temp).softmax(-1) 
+        index_window = get_score_index_2d21d(norm_window.view(B, N), 1 / N, self.bounce_value) 
         return index_window
     
     def token_selection(self, scores: torch.Tensor, index_window: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         B, N, h, w = self.B, self.N, self.partition_size[0], self.partition_size[1]
         temp = 1
-        norm_token = (torch.norm(scores, dim=[3], p=1) / temp).view(B * N, -1)[index_window].softmax(-1)  # 1.04%
-        index_token, asy_index_partition, K = get_score_index_with_padding(norm_token, 1 / (h * w), self.bounce_value)  # 2.94%
+        norm_token = (torch.norm(scores, dim=[3], p=1) / temp).view(B * N, -1)[index_window].softmax(-1)
+        index_token, asy_index_partition, K = get_score_index_with_padding(norm_token, 1 / (h * w), self.bounce_value) 
         return index_token, asy_index_partition, K
         
-    def _partition_attn(self, x: torch.Tensor, pos_emb: torch.Tensor, r: torch.Tensor, index_list: List) -> Tuple[torch.Tensor, ...]:  # 53.8%
+    def _partition_attn(self, x: torch.Tensor, pos_emb: torch.Tensor, r: torch.Tensor, index_list: List) -> Tuple[torch.Tensor, ...]:
         index_count = 0
         self.B = x.shape[0]
         img_size = x.shape[1:3]
@@ -280,21 +280,21 @@ class SAST_block(nn.Module):
         x = x + pos_emb(x)
         x = window_partition(x, self.partition_size).view(self.B, self.N, -1, self.dim) 
         if self.first_block:
-            # Scoring Module  # 4.3%a
-            scale = self.to_controls(r + 1e-6)[:, None, None, :]  # 1.09%
-            scores = self.act(self.to_scores(x))  # 1.25%
+            # Scoring Module 
+            scale = self.to_controls(r + 1e-6)[:, None, None, :]  
+            scores = self.act(self.to_scores(x)) 
 
-            # STP Weighting  # 1.1%a
-            weight = scale.sigmoid() * scores.sigmoid()  # 0.36%
-            x = (weight * x).view(self.B * self.N, -1, self.dim) # Weight x use sigmoid scores 0.21%
+            # STP Weighting
+            weight = scale.sigmoid() * scores.sigmoid() 
+            x = (weight * x).view(self.B * self.N, -1, self.dim) # Weight x use sigmoid scores 
 
-            # Selection Module  # 16.1%a
-            scale = self.amp_value / scale  # 0.40%
-            scale[scale==torch.inf] = 0  # 0.44%
+            # Selection Module 
+            scale = self.amp_value / scale
+            scale[scale==torch.inf] = 0
             scores = scale * scores
-            index_window = self.window_selection(scores)  # 1.97%
-            index_token, asy_index, K = self.token_selection(scores, index_window)  # 4.05%
-            padding_index = index_token[torch.isin(index_token, asy_index, assume_unique=True, invert=True)] # Get padding index 1.79%
+            index_window = self.window_selection(scores)
+            index_token, asy_index, K = self.token_selection(scores, index_window)
+            padding_index = index_token[torch.isin(index_token, asy_index, assume_unique=True, invert=True)] # Get padding index
             index_list1 = [index_window, index_token, padding_index, asy_index, K] # Buffer index list for reusing
         else:
             # Reuse index list
@@ -303,7 +303,7 @@ class SAST_block(nn.Module):
             index_window, index_token, padding_index, asy_index, K = index_list1
         M = len(index_window)
         
-        if len(index_token):  # 14.51% # 7.5%a indexing
+        if len(index_token):
             x = self.win_attn(x, index_window, index_token, padding_index, asy_index, M, self.B, self.enable_CB)
         x = window_reverse(x, self.partition_size, (img_size[0], img_size[1]))
         
@@ -315,10 +315,10 @@ class SAST_block(nn.Module):
             scores = window_reverse(scores.view_as(x), self.partition_size, (img_size[0], img_size[1]))
             scores = grid_partition(scores, self.partition_size).view(self.B, self.N, -1, self.dim)
 
-            # Selection Module  # 14.7%a
-            index_window = self.window_selection(scores)  # 2.00%
-            index_token, asy_index, K = self.token_selection(scores, index_window)  # 4.10%
-            padding_index = index_token[torch.isin(index_token, asy_index, assume_unique=True, invert=True)]  # 1.84%
+            # Selection Module 
+            index_window = self.window_selection(scores) 
+            index_token, asy_index, K = self.token_selection(scores, index_window)
+            padding_index = index_token[torch.isin(index_token, asy_index, assume_unique=True, invert=True)]
             index_list2 = [index_window, index_token, padding_index, asy_index, K]
         else:
             index_window, index_token, padding_index, asy_index, K = index_list2
@@ -326,7 +326,7 @@ class SAST_block(nn.Module):
         x = grid_partition(x, self.partition_size).view(self.B * self.N, -1, self.dim)
         
         M = len(index_window)
-        if len(index_token):  # 14.22% # 7.5% indexing
+        if len(index_token):  
             x = self.grid_attn(x, index_window, index_token, padding_index, asy_index, M, self.B, self.enable_CB)
         x = grid_reverse(x, self.partition_size, (img_size[0], img_size[1]))
         index_count += len(asy_index) // self.B
@@ -407,30 +407,30 @@ class MS_WSA(nn.Module):
             return x.view(*restore_shape)
         
         # Gather selected tokens
-        X = x.clone()  # 0.22%
-        x = x[index_window].view(-1, C)  # 0.29%
-        XX = x.clone()  # 0.16%
+        X = x.clone() 
+        x = x[index_window].view(-1, C) 
+        XX = x.clone() 
         x[asy_index] = self.norm2(x[asy_index])  
-        shortcut = x[asy_index]  # 0.15%
-        x = x[index_token].view(M, -1, C)  # 0.22%
+        shortcut = x[asy_index]  
+        x = x[index_token].view(M, -1, C)  
 
         # Attention
         q, k, v = self.qkv(x).view(M, -1, self.num_heads, self.dim_head * 3).transpose(1, 2).chunk(3, dim=3)
         attn = (q @ k.transpose(-2, -1)) * self.scale
         
         # Column masking
-        attn_map = torch.zeros((XX.shape[0], q.shape[2], self.num_heads), device=x.device, dtype=attn.dtype)  # 0.26%
-        attn_map[index_token] = attn.transpose(1, 3).reshape(-1, q.shape[2], self.num_heads)  # 0.44%
-        attn_map[padding_index] = -1e4  # 0.47%
-        attn = attn_map[index_token].view(M, -1, q.shape[2], self.num_heads).transpose(1, 3)  # 0.34%
+        attn_map = torch.zeros((XX.shape[0], q.shape[2], self.num_heads), device=x.device, dtype=attn.dtype) 
+        attn_map[index_token] = attn.transpose(1, 3).reshape(-1, q.shape[2], self.num_heads) 
+        attn_map[padding_index] = -1e4 
+        attn = attn_map[index_token].view(M, -1, q.shape[2], self.num_heads).transpose(1, 3) 
 
         attn = attn.softmax(dim=-1)
         x = (attn @ v).transpose(1, 2)
         x = self.proj(x.reshape(M, -1, C))
 
 
-        XX[index_token] = x.view(-1, C)  # 0.38%
-        x = XX[asy_index]  # 0.22%
+        XX[index_token] = x.view(-1, C) 
+        x = XX[asy_index] 
 
         for i, layer in enumerate(self.sub_layers):
             if i == 1 or i == 5: # DropPath
@@ -450,9 +450,9 @@ class MS_WSA(nn.Module):
 
         # Scatter selected tokens
         XX[asy_index] = x.view(-1, C)
-        XX[padding_index] = X[index_window].view(-1, C)[padding_index]  # 0.56%
-        X[index_window] = XX.view(M, -1, C)  # 0.13%
-        x = X.view(*restore_shape)  # 0.20%
+        XX[padding_index] = X[index_window].view(-1, C)[padding_index]
+        X[index_window] = XX.view(M, -1, C) 
+        x = X.view(*restore_shape) 
         return x
 
 

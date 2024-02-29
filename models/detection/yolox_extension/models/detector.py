@@ -37,8 +37,8 @@ class YoloXDetector(th.nn.Module):
                          token_mask: Optional[th.Tensor] = None) -> \
             Tuple[BackboneFeatures, LstmStates, th.Tensor]:
         with CudaTimer(device=x.device, timer_name="Backbone"):
-            backbone_features, states, p, img, tokens = self.backbone(x, previous_states, token_mask)
-        return backbone_features, states, p, img, tokens
+            backbone_features, states, p = self.backbone(x, previous_states, token_mask)
+        return backbone_features, states, p
 
     def forward_detect(self,
                        backbone_features: BackboneFeatures,
