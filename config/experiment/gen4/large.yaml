@@ -4,12 +4,6 @@ defaults:
 
 model:
   backbone:
-    embed_dim: 72
-    stage:
-      attention:
-        dim_head: 36
+    embed_dim: 96
   fpn:
     depth: 0.67
-
-# wandb:
-#   group_name: small

@@ -9,5 +9,5 @@ fpn:
 head:
   name: ???
 postprocess:
-  confidence_threshold: 0.001
+  confidence_threshold: 0.01
   nms_threshold: 0.45

@@ -251,8 +251,8 @@ class SAST_block(nn.Module):
             torch.nn.init.constant_(self.to_controls.weight, 1)
             self.act = nn.ReLU()
 
-        self.amp_value = 2e-4
-        self.bounce_value = 1e-3
+        self.amp_value = attention_cfg.get('AMP', 2e-4)
+        self.bounce_value = attention_cfg.get('BOUNCE', 1e-3)
         self.first_block = first_block
         self.B, self.N, self.dim = None, None, dim
 

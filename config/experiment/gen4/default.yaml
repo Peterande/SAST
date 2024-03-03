@@ -3,7 +3,7 @@ defaults:
   - /model/maxvit_yolox: default
 
 training:
-  precision: 32
+  precision: 16
   max_epochs: 10000
   max_steps: 400000
   learning_rate: 0.000346
