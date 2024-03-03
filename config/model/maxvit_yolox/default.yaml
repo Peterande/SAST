@@ -1,7 +1,4 @@
 # @package _global_
-defaults:
-  - override /model: rnndet
-
 model:
   backbone:
     name: MaxViTRNN
