@@ -426,10 +426,9 @@ class MS_WSA(nn.Module):
 
         attn = attn.softmax(dim=-1)
         x = (attn @ v).transpose(1, 2)
-        x = self.proj(x.reshape(M, -1, C))
+        x = self.proj(x.reshape(M, -1, C)).to(XX.dtype)
 
-
-        XX[index_token] = x.view(-1, C) 
+        XX[index_token] = x.view(-1, C)
         x = XX[asy_index] 
 
         for i, layer in enumerate(self.sub_layers):
@@ -437,7 +436,7 @@ class MS_WSA(nn.Module):
                 x = shortcut + layer(x)
                 shortcut = x
             elif i == 3: # MLP
-                x = layer(x)
+                x = layer(x).to(X.dtype)
                 if enable_CB: # Context Broadcasting operation
                     temp_X, temp_XX = torch.zeros_like(X), torch.zeros_like(XX)
                     temp_XX[asy_index] = x

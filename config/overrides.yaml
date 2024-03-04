@@ -23,5 +23,6 @@ model:
       attention:
         drop_mlp: 0.05
         drop_path: 0.05
+        enable_CB: True
 training:
   precision: 16

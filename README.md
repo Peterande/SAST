@@ -1,16 +1,16 @@
-# RVT: Recurrent Vision Transformers for Object Detection with Event Cameras
+# SAST: Scene Adaptive Sparse Transformer for Event-based Object Detection
 <p align="center">
   <img src="https://rpg.ifi.uzh.ch/img/papers/arxiv22_detection_mgehrig/combo.png" width="750">
 </p>
 
-This is the official Pytorch implementation of the CVPR 2023 paper [Recurrent Vision Transformers for Object Detection with Event Cameras](https://arxiv.org/abs/2212.05598)
+This is the official Pytorch implementation of the CVPR 2024 paper [Scene Adaptive Sparse Transformer for Event-based Object Detection]
 
 ```bibtex
-@InProceedings{Gehrig_2023_CVPR,
-  author  = {Mathias Gehrig and Davide Scaramuzza},
-  title   = {Recurrent Vision Transformers for Object Detection with Event Cameras},
+@InProceedings{peng2024sast,
+  author  = {Yansong Peng and Hebei Li and Yueyi Zhang and Xiaoyan Sun and Feng Wu},
+  title   = {Scene Adaptive Sparse Transformer for Event-based Object Detection},
   booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
-  year    = {2023},
+  year    = {2024},
 }
 ```
 
@@ -18,7 +18,7 @@ This is the official Pytorch implementation of the CVPR 2023 paper [Recurrent Vi
 We highly recommend to use [Mambaforge](https://github.com/conda-forge/miniforge#mambaforge) to reduce the installation time.
 ```Bash
 conda create -y -n rvt python=3.9 pip
-conda activate rvt
+conda activate sast
 conda config --set channel_priority flexible
 
 CUDA_VERSION=11.8
@@ -36,7 +36,7 @@ python -m pip install 'git+https://github.com/facebookresearch/detectron2.git'
 Detectron2 is not strictly required but speeds up the evaluation.
 
 ## Required Data
-To evaluate or train RVT you will need to download the required preprocessed datasets:
+To evaluate or train SAST you will need to download the required preprocessed datasets:
 
 <table><tbody>
 <th valign="bottom"></th>
@@ -54,52 +54,9 @@ To evaluate or train RVT you will need to download the required preprocessed dat
 
 You may also pre-process the dataset yourself by following the [instructions](scripts/genx/README.md).
 
-## Pre-trained Checkpoints
-### 1 Mpx
-<table><tbody>
-<th valign="bottom"></th>
-<th valign="bottom">RVT-Base</th>
-<th valign="bottom">RVT-Small</th>
-<th valign="bottom">RVT-Tiny</th>
-<tr><td align="left">pre-trained checkpoint</td>
-<td align="center"><a href="https://download.ifi.uzh.ch/rpg/RVT/checkpoints/1mpx/rvt-b.ckpt">download</a></td>
-<td align="center"><a href="https://download.ifi.uzh.ch/rpg/RVT/checkpoints/1mpx/rvt-s.ckpt">download</a></td>
-<td align="center"><a href="https://download.ifi.uzh.ch/rpg/RVT/checkpoints/1mpx/rvt-t.ckpt">download</a></td>
-</tr>
-<tr><td align="left">md5</td>
-<td align="center"><tt>72923a</tt></td>
-<td align="center"><tt>a94207</tt></td>
-<td align="center"><tt>5a3c78</tt></td>
-</tr>
-</tbody></table>
-
-### Gen1
-<table><tbody>
-<th valign="bottom"></th>
-<th valign="bottom">RVT-Base</th>
-<th valign="bottom">RVT-Small</th>
-<th valign="bottom">RVT-Tiny</th>
-<tr><td align="left">pre-trained checkpoint</td>
-<td align="center"><a href="https://download.ifi.uzh.ch/rpg/RVT/checkpoints/gen1/rvt-b.ckpt">download</a></td>
-<td align="center"><a href="https://download.ifi.uzh.ch/rpg/RVT/checkpoints/gen1/rvt-s.ckpt">download</a></td>
-<td align="center"><a href="https://download.ifi.uzh.ch/rpg/RVT/checkpoints/gen1/rvt-t.ckpt">download</a></td>
-</tr>
-<tr><td align="left">md5</td>
-<td align="center"><tt>839317</tt></td>
-<td align="center"><tt>840f2b</tt></td>
-<td align="center"><tt>a770b9</tt></td>
-</tr>
-</tbody></table>
-
 ## Evaluation
 - Set `DATA_DIR` as the path to either the 1 Mpx or Gen1 dataset directory
 - Set `CKPT_PATH` to the path of the *correct* checkpoint matching the choice of the model and dataset.
-- Set
-  - `MDL_CFG=base`, or
-  - `MDL_CFG=small`, or
-  - `MDL_CFG=tiny`
-  
-  to load either the base, small, or tiny model configuration
 - Set
   - `USE_TEST=1` to evaluate on the test set, or
   - `USE_TEST=0` to evaluate on the validation set
@@ -120,12 +77,6 @@ batch_size.eval=8 model.postprocess.confidence_threshold=0.001
 
 ## Training
 - Set `DATA_DIR` as the path to either the 1 Mpx or Gen1 dataset directory
-- Set
-    - `MDL_CFG=base`, or
-    - `MDL_CFG=small`, or
-    - `MDL_CFG=tiny`
-
-  to load either the base, small, or tiny model configuration
 - Set `GPU_IDS` to the PCI BUS IDs of the GPUs that you want to use. e.g. `GPU_IDS=[0,1]` for using GPU 0 and 1.
   **Using a list of IDS will enable single-node multi-GPU training.**
   Pay attention to the batch size which is defined per GPU:
@@ -137,7 +88,7 @@ all models on both datasets:
   `lr = 2e-4 * sqrt(effective_batch_size/8)`.
 - The training code uses [W&B](https://wandb.ai/) for logging during the training.
 Hence, we assume that you have a W&B account. 
-  - The training script below will create a new project called `RVT`. Adapt the project name and group name if necessary.
+  - The training script below will create a new project called `SAST`. Adapt the project name and group name if necessary.
  
 ### 1 Mpx
 - The effective batch size for the 1 Mpx training is 24.
@@ -147,7 +98,7 @@ GPU_IDS=[0,1]
 BATCH_SIZE_PER_GPU=12
 TRAIN_WORKERS_PER_GPU=6
 EVAL_WORKERS_PER_GPU=2
-python train.py model=rnndet dataset=gen4 dataset.path=${DATA_DIR} wandb.project_name=RVT \
+python train.py model=rnndet dataset=gen4 dataset.path=${DATA_DIR} wandb.project_name=SAST \
 wandb.group_name=1mpx +experiment/gen4="${MDL_CFG}.yaml" hardware.gpus=${GPU_IDS} \
 batch_size.train=${BATCH_SIZE_PER_GPU} batch_size.eval=${BATCH_SIZE_PER_GPU} \
 hardware.num_workers.train=${TRAIN_WORKERS_PER_GPU} hardware.num_workers.eval=${EVAL_WORKERS_PER_GPU}
@@ -165,7 +116,7 @@ GPU_IDS=0
 BATCH_SIZE_PER_GPU=8
 TRAIN_WORKERS_PER_GPU=6
 EVAL_WORKERS_PER_GPU=2
-python train.py model=rnndet dataset=gen1 dataset.path=${DATA_DIR} wandb.project_name=RVT \
+python train.py model=rnndet dataset=gen1 dataset.path=${DATA_DIR} wandb.project_name=SAST \
 wandb.group_name=gen1 +experiment/gen1="${MDL_CFG}.yaml" hardware.gpus=${GPU_IDS} \
 batch_size.train=${BATCH_SIZE_PER_GPU} batch_size.eval=${BATCH_SIZE_PER_GPU} \
 hardware.num_workers.train=${TRAIN_WORKERS_PER_GPU} hardware.num_workers.eval=${EVAL_WORKERS_PER_GPU}

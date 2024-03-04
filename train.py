@@ -97,8 +97,8 @@ def main(config: DictConfig):
     # ---------------------
     # Logging and Checkpoints
     # ---------------------
-    # logger = get_wandb_logger(config)
-    logger = CSVLogger(save_dir='./logs/', name='experiment_name')
+    logger = get_wandb_logger(config)
+    # logger = CSVLogger(save_dir='./logs/', name='experiment_name')
     ckpt_path = None
     if config.wandb.artifact_name is not None:
         ckpt_path = get_ckpt_path(logger, wandb_config=config.wandb)
@@ -116,18 +116,18 @@ def main(config: DictConfig):
     # Callbacks and Misc
     # ---------------------
     callbacks = list()
-
-    callbacks.append(MyProgressBar(refresh_rate=1))
-    # callbacks.append(get_ckpt_callback(config))
+    
+    callbacks.append(TQDMProgressBar(refresh_rate=100))
+    callbacks.append(get_ckpt_callback(config))
     callbacks.append(GradFlowLogCallback(config.logging.train.log_model_every_n_steps))
     if config.training.lr_scheduler.use:
         callbacks.append(LearningRateMonitor(logging_interval='step'))
-    # if config.logging.train.high_dim.enable or config.logging.validation.high_dim.enable:
-        # viz_callback = get_viz_callback(config=config)
-        # callbacks.append(viz_callback)
+    if config.logging.train.high_dim.enable or config.logging.validation.high_dim.enable:
+        viz_callback = get_viz_callback(config=config)
+        callbacks.append(viz_callback)
     callbacks.append(ModelSummary(max_depth=2))
 
-    # logger.watch(model=module, log='all', log_freq=config.logging.train.log_model_every_n_steps, log_graph=True)
+    logger.watch(model=module, log='all', log_freq=config.logging.train.log_model_every_n_steps, log_graph=True)
 
     # ---------------------
     # Training
@@ -143,7 +143,7 @@ def main(config: DictConfig):
         enable_checkpointing=True,
         val_check_interval=val_check_interval,
         check_val_every_n_epoch=check_val_every_n_epoch,
-        default_root_dir=None,
+        default_root_dir='/output/',
         devices=gpus,
         gradient_clip_val=config.training.gradient_clip_val,
         gradient_clip_algorithm='value',
