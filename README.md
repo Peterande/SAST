@@ -91,35 +91,26 @@ Hence, we assume that you have a W&B account.
   - The training script below will create a new project called `SAST`. Adapt the project name and group name if necessary.
  
 ### 1 Mpx
-- The effective batch size for the 1 Mpx training is 24.
-- To train on 2 GPUs using 6 workers per GPU for training and 2 workers per GPU for evaluation:
 ```Bash
-GPU_IDS=[0,1]
-BATCH_SIZE_PER_GPU=12
 TRAIN_WORKERS_PER_GPU=6
 EVAL_WORKERS_PER_GPU=2
+GPU_NUMBER=$(nvidia-smi --list-gpus | wc -l)
+GPUS=$(seq -s "," 0 $((ngpu - 1)))
+BATCH_SIZE_PER_GPU=4
+lr=$(python -c "import math; print(2e-4*math.sqrt(${BATCH_SIZE_PER_GPU}*${GPU_NUMBER}/8))")
 python train.py model=rnndet dataset=gen4 dataset.path=${DATA_DIR} wandb.project_name=SAST \
-wandb.group_name=1mpx +experiment/gen4="${MDL_CFG}.yaml" hardware.gpus=${GPU_IDS} \
-batch_size.train=${BATCH_SIZE_PER_GPU} batch_size.eval=${BATCH_SIZE_PER_GPU} \
-hardware.num_workers.train=${TRAIN_WORKERS_PER_GPU} hardware.num_workers.eval=${EVAL_WORKERS_PER_GPU}
-```
-If you instead want to execute the training on 4 GPUs simply adapt `GPU_IDS` and `BATCH_SIZE_PER_GPU` accordingly:
-```Bash
-GPU_IDS=[0,1,2,3]
-BATCH_SIZE_PER_GPU=6
+wandb.group_name=1mpx hardware.num_workers.train=${TRAIN_WORKERS_PER_GPU} batch_size.train=${BATCH_SIZE_PER_GPU} \ hardware.num_workers.eval=${EVAL_WORKERS_PER_GPU} batch_size.eval=${BATCH_SIZE_PER_GPU} hardware.gpus=[${GPUS}] \ training.learning_rate=${lr} validation.val_check_interval=10000 +experiment/gen4="base.yaml"
 ```
 ### Gen1
-- The effective batch size for the Gen1 training is 8.
-- To train on 1 GPU using 6 workers for training and 2 workers for evaluation:
 ```Bash
-GPU_IDS=0
-BATCH_SIZE_PER_GPU=8
 TRAIN_WORKERS_PER_GPU=6
 EVAL_WORKERS_PER_GPU=2
+GPU_NUMBER=$(nvidia-smi --list-gpus | wc -l)
+GPUS=$(seq -s "," 0 $((ngpu - 1)))
+BATCH_SIZE_PER_GPU=4
+lr=$(python -c "import math; print(2e-4*math.sqrt(${BATCH_SIZE_PER_GPU}*${GPU_NUMBER}/8))")
 python train.py model=rnndet dataset=gen1 dataset.path=${DATA_DIR} wandb.project_name=SAST \
-wandb.group_name=gen1 +experiment/gen1="${MDL_CFG}.yaml" hardware.gpus=${GPU_IDS} \
-batch_size.train=${BATCH_SIZE_PER_GPU} batch_size.eval=${BATCH_SIZE_PER_GPU} \
-hardware.num_workers.train=${TRAIN_WORKERS_PER_GPU} hardware.num_workers.eval=${EVAL_WORKERS_PER_GPU}
+wandb.group_name=gen1 hardware.num_workers.train=${TRAIN_WORKERS_PER_GPU} batch_size.train=${BATCH_SIZE_PER_GPU} \ hardware.num_workers.eval=${EVAL_WORKERS_PER_GPU} batch_size.eval=${BATCH_SIZE_PER_GPU} hardware.gpus=[${GPUS}] \ training.learning_rate=${lr} validation.val_check_interval=10000 +experiment/gen1="base.yaml"
 ```
 
 ## Code Acknowledgments
