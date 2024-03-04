@@ -1,7 +1,7 @@
 # @package _global_
 dataset:
   # path: /data/chatgod/rvt_gen4/gen4/
-  path: /home/pengys/Data/gen4/
+  path: null
 wandb:
   project_name: SRVT
   group_name: 1mpx
@@ -26,3 +26,5 @@ model:
         enable_CB: False
 training:
   precision: 16
+
+  

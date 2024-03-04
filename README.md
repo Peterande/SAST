@@ -65,27 +65,16 @@ You may also pre-process the dataset yourself by following the [instructions](sc
 ### 1 Mpx
 ```Bash
 python validation.py dataset=gen4 dataset.path=${DATA_DIR} checkpoint=${CKPT_PATH} \
-use_test_set=${USE_TEST} hardware.gpus=${GPU_ID} +experiment/gen4="${MDL_CFG}.yaml" \
-batch_size.eval=8 model.postprocess.confidence_threshold=0.001
+use_test_set=${USE_TEST} hardware.gpus=${GPU_ID} batch_size.eval=8
 ```
 ### Gen1
 ```Bash
 python validation.py dataset=gen1 dataset.path=${DATA_DIR} checkpoint=${CKPT_PATH} \
-use_test_set=${USE_TEST} hardware.gpus=${GPU_ID} +experiment/gen1="${MDL_CFG}.yaml" \
-batch_size.eval=8 model.postprocess.confidence_threshold=0.001
+use_test_set=${USE_TEST} hardware.gpus=${GPU_ID} batch_size.eval=8
 ```
 
 ## Training
 - Set `DATA_DIR` as the path to either the 1 Mpx or Gen1 dataset directory
-- Set `GPU_IDS` to the PCI BUS IDs of the GPUs that you want to use. e.g. `GPU_IDS=[0,1]` for using GPU 0 and 1.
-  **Using a list of IDS will enable single-node multi-GPU training.**
-  Pay attention to the batch size which is defined per GPU:
-- Set `BATCH_SIZE_PER_GPU` such that the effective batch size is matching the parameters below.
-  The **effective batch size** is (batch size per gpu)*(number of GPUs).
-- If you would like to change the effective batch size, we found the following learning rate scaling to work well for 
-all models on both datasets:
-  
-  `lr = 2e-4 * sqrt(effective_batch_size/8)`.
 - The training code uses [W&B](https://wandb.ai/) for logging during the training.
 Hence, we assume that you have a W&B account. 
   - The training script below will create a new project called `SAST`. Adapt the project name and group name if necessary.
@@ -95,22 +84,25 @@ Hence, we assume that you have a W&B account.
 TRAIN_WORKERS_PER_GPU=6
 EVAL_WORKERS_PER_GPU=2
 GPU_NUMBER=$(nvidia-smi --list-gpus | wc -l)
-GPUS=$(seq -s "," 0 $((ngpu - 1)))
+GPUS=$(seq -s "," 0 $((GPU_NUMBER - 1)))
 BATCH_SIZE_PER_GPU=4
+DATA_DIR=/home/pengys/Data/gen4/
 lr=$(python -c "import math; print(2e-4*math.sqrt(${BATCH_SIZE_PER_GPU}*${GPU_NUMBER}/8))")
 python train.py model=rnndet dataset=gen4 dataset.path=${DATA_DIR} wandb.project_name=SAST \
-wandb.group_name=1mpx hardware.num_workers.train=${TRAIN_WORKERS_PER_GPU} batch_size.train=${BATCH_SIZE_PER_GPU} \ hardware.num_workers.eval=${EVAL_WORKERS_PER_GPU} batch_size.eval=${BATCH_SIZE_PER_GPU} hardware.gpus=[${GPUS}] \ training.learning_rate=${lr} validation.val_check_interval=10000 +experiment/gen4="base.yaml"
+wandb.group_name=1mpx hardware.num_workers.train=${TRAIN_WORKERS_PER_GPU} batch_size.train=${BATCH_SIZE_PER_GPU} \
+hardware.num_workers.eval=${EVAL_WORKERS_PER_GPU} batch_size.eval=${BATCH_SIZE_PER_GPU} hardware.gpus=[${GPUS}] \ 
+training.learning_rate=${lr} validation.val_check_interval=10000
 ```
 ### Gen1
 ```Bash
 TRAIN_WORKERS_PER_GPU=6
 EVAL_WORKERS_PER_GPU=2
 GPU_NUMBER=$(nvidia-smi --list-gpus | wc -l)
-GPUS=$(seq -s "," 0 $((ngpu - 1)))
+GPUS=$(seq -s "," 0 $((GPU_NUMBER - 1)))
 BATCH_SIZE_PER_GPU=4
 lr=$(python -c "import math; print(2e-4*math.sqrt(${BATCH_SIZE_PER_GPU}*${GPU_NUMBER}/8))")
 python train.py model=rnndet dataset=gen1 dataset.path=${DATA_DIR} wandb.project_name=SAST \
-wandb.group_name=gen1 hardware.num_workers.train=${TRAIN_WORKERS_PER_GPU} batch_size.train=${BATCH_SIZE_PER_GPU} \ hardware.num_workers.eval=${EVAL_WORKERS_PER_GPU} batch_size.eval=${BATCH_SIZE_PER_GPU} hardware.gpus=[${GPUS}] \ training.learning_rate=${lr} validation.val_check_interval=10000 +experiment/gen1="base.yaml"
+wandb.group_name=gen1 hardware.num_workers.train=${TRAIN_WORKERS_PER_GPU} batch_size.train=${BATCH_SIZE_PER_GPU} \ hardware.num_workers.eval=${EVAL_WORKERS_PER_GPU} batch_size.eval=${BATCH_SIZE_PER_GPU} hardware.gpus=[${GPUS}] \ training.learning_rate=${lr} validation.val_check_interval=10000
 ```
 
 ## Code Acknowledgments
