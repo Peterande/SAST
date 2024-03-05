@@ -1,8 +1,10 @@
 # SAST: Scene Adaptive Sparse Transformer for Event-based Object Detection
 <p align="center">
-  <img src="figures/teaser.png" width="750">
+  <img src="figures/Fig1.png" width="750">
 </p>
-
+<p align="center">
+  <img src="figures/Fig6.png" width="750">
+</p>
 This is the official Pytorch implementation of the CVPR 2024 paper [Scene Adaptive Sparse Transformer for Event-based Object Detection]
 
 ```bibtex
