@@ -1,7 +1,10 @@
-''' SAST: Scene Adaptive Sparse Transformer for Event-based Object Detection '''
-''' Anonymous CVPR 2024 submission supplementary material '''
-''' Paper ID: 2476 '''
-
+# ==============================================================================
+# SAST: Scene Adaptive Sparse Transformer for Event-based Object Detection
+# Copyright (c) 2023 The SAST Authors.
+# Licensed under The MIT License.
+# Written by Yansong Peng.
+# Modified from RVT.
+# ==============================================================================
 
 from enum import Enum, auto
 from functools import partial

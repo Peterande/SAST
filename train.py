@@ -1,3 +1,11 @@
+# ==============================================================================
+# SAST: Scene Adaptive Sparse Transformer for Event-based Object Detection
+# Copyright (c) 2023 The SAST Authors.
+# Licensed under The MIT License.
+# Written by Yansong Peng.
+# Modified from RVT.
+# ==============================================================================
+
 import os
 
 os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
