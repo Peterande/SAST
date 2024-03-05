@@ -61,13 +61,13 @@ Hence, we assume that you have a W&B account.
 ### 1 Mpx
 ```Bash
 BATCH_SIZE_PER_GPU=4 
-TRAIN_WORKERS_PER_GPU=6
+TRAIN_WORKERS_PER_GPU=2 
 EVAL_WORKERS_PER_GPU=2 
 GPU_NUMBER=$(nvidia-smi --list-gpus | wc -l) 
-```
-```Bash
 GPUS=$(seq -s "," 0 $((GPU_NUMBER - 1))) 
 lr=$(python -c "import math; print(2e-4*math.sqrt(${BATCH_SIZE_PER_GPU}*${GPU_NUMBER}/8))") 
+```
+```Bash
 python train.py model=rnndet dataset=gen4 dataset.path=${DATA_DIR} wandb.project_name=SAST 
 wandb.group_name=1mpx hardware.num_workers.train=${TRAIN_WORKERS_PER_GPU} 
 batch_size.train=${BATCH_SIZE_PER_GPU} hardware.num_workers.eval=${EVAL_WORKERS_PER_GPU} 
@@ -76,12 +76,11 @@ training.learning_rate=${lr} validation.val_check_interval=10000
 ```
 ### Gen1
 ```Bash
-TRAIN_WORKERS_PER_GPU=6 
+BATCH_SIZE_PER_GPU=4 
+TRAIN_WORKERS_PER_GPU=2 
 EVAL_WORKERS_PER_GPU=2 
 GPU_NUMBER=$(nvidia-smi --list-gpus | wc -l) 
-GPUS=$(seq -s "," 0 $((GPU_NUMBER - 1))) 
-BATCH_SIZE_PER_GPU=4 
-DATA_DIR=/home/pengys/Data/gen1/ 
+GPUS=$(seq -s "," 0 $((GPU_NUMBER - 1)))  
 lr=$(python -c "import math; print(2e-4*math.sqrt(${BATCH_SIZE_PER_GPU}*${GPU_NUMBER}/8))") 
 ```
 ```Bash
