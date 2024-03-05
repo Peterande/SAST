@@ -2,7 +2,7 @@
 <p align="center">
   <img src="figures/Fig1.png" width="750">
 </p>
-This is the official Pytorch implementation of the CVPR 2024 paper [Scene Adaptive Sparse Transformer for Event-based Object Detection]
+This is the official Pytorch implementation of the CVPR 2024 paper "Scene Adaptive Sparse Transformer for Event-based Object Detection"
 
 ```bibtex
 @InProceedings{peng2024sast,
@@ -33,7 +33,7 @@ python -m pip install 'git+https://github.com/facebookresearch/detectron2.git'
 ```
 Detectron2 is not strictly required but speeds up the evaluation.
 
-## Required Data
+## Required Data (same as [RVT](https://github.com/uzh-rpg/RVT))
 To evaluate or train SAST you will need to download the required preprocessed datasets:
 
 <table><tbody>
