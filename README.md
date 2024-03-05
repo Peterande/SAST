@@ -13,7 +13,7 @@ This is the official Pytorch implementation of the CVPR 2024 paper [Scene Adapti
 }
 ```
 
-## Conda Installation
+## Conda Installation (same as [RVT](https://github.com/uzh-rpg/RVT))
 ```Bash
 conda create -y -n rvt python=3.9 pip
 conda activate sast
@@ -52,25 +52,6 @@ To evaluate or train SAST you will need to download the required preprocessed da
 
 You may also pre-process the dataset yourself by following the [instructions](scripts/genx/README.md).
 
-## Evaluation
-- Set `DATA_DIR` as the path to either the 1 Mpx or Gen1 dataset directory
-- Set `CKPT_PATH` to the path of the *correct* checkpoint matching the choice of the model and dataset.
-- Set
-  - `USE_TEST=1` to evaluate on the test set, or
-  - `USE_TEST=0` to evaluate on the validation set
-- Set `GPU_ID` to the PCI BUS ID of the GPU that you want to use. e.g. `GPU_ID=0`.
-  Only a single GPU is supported for evaluation
-### 1 Mpx
-```Bash
-python validation.py dataset=gen4 dataset.path=${DATA_DIR} checkpoint=${CKPT_PATH} \
-use_test_set=${USE_TEST} hardware.gpus=${GPU_ID} batch_size.eval=8
-```
-### Gen1
-```Bash
-python validation.py dataset=gen1 dataset.path=${DATA_DIR} checkpoint=${CKPT_PATH} \
-use_test_set=${USE_TEST} hardware.gpus=${GPU_ID} batch_size.eval=8
-```
-
 ## Training
 - Set `DATA_DIR` as the path to either the 1 Mpx or Gen1 dataset directory
 - The training code uses [W&B](https://wandb.ai/) for logging during the training.
@@ -108,7 +89,27 @@ batch_size.eval=${BATCH_SIZE_PER_GPU} hardware.gpus=[${GPUS}]
 training.learning_rate=${lr} validation.val_check_interval=10000
 ```
 
+## Evaluation
+- Set `DATA_DIR` as the path to either the 1 Mpx or Gen1 dataset directory
+- Set `CKPT_PATH` to the path of the *correct* checkpoint matching the choice of the model and dataset.
+- Set
+  - `USE_TEST=1` to evaluate on the test set, or
+  - `USE_TEST=0` to evaluate on the validation set
+- Set `GPU_ID` to the PCI BUS ID of the GPU that you want to use. e.g. `GPU_ID=0`.
+  Only a single GPU is supported for evaluation
+### 1 Mpx
+```Bash
+python validation.py dataset=gen4 dataset.path=${DATA_DIR} checkpoint=${CKPT_PATH} \
+use_test_set=${USE_TEST} hardware.gpus=${GPU_ID} batch_size.eval=4
+```
+### Gen1
+```Bash
+python validation.py dataset=gen1 dataset.path=${DATA_DIR} checkpoint=${CKPT_PATH} \
+use_test_set=${USE_TEST} hardware.gpus=${GPU_ID} batch_size.eval=4
+```
+
 ## Code Acknowledgments
 This project has used code from the following projects:
+- [RVT](https://github.com/uzh-rpg/RVT) for the RVT architecture implementation in Pytorch
 - [timm](https://github.com/huggingface/pytorch-image-models) for the MaxViT layer implementation in Pytorch
 - [YOLOX](https://github.com/Megvii-BaseDetection/YOLOX) for the detection PAFPN/head
