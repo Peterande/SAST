@@ -21,13 +21,13 @@ conda config --set channel_priority flexible
 
 CUDA_VERSION=11.8
 
-conda install -y h5py=3.8.0 blosc-hdf5-plugin=1.0.0 \
-hydra-core=1.3.2 einops=0.6.0 torchdata=0.6.0 tqdm numba \
-pytorch=2.0.0 torchvision=0.15.0 pytorch-cuda=$CUDA_VERSION \
+conda install -y h5py=3.8.0 blosc-hdf5-plugin=1.0.0
+hydra-core=1.3.2 einops=0.6.0 torchdata=0.6.0 tqdm numba
+pytorch=2.0.0 torchvision=0.15.0 pytorch-cuda=$CUDA_VERSION
 -c pytorch -c nvidia -c conda-forge
 
-python -m pip install pytorch-lightning==1.8.6 wandb==0.14.0 \
-pandas==1.5.3 plotly==5.13.1 opencv-python==4.6.0.66 tabulate==0.9.0 \
+python -m pip install pytorch-lightning==1.8.6 wandb==0.14.0
+pandas==1.5.3 plotly==5.13.1 opencv-python==4.6.0.66 tabulate==0.9.0
 pycocotools==2.0.6 bbox-visualizer==0.1.0 StrEnum=0.4.10
 python -m pip install 'git+https://github.com/facebookresearch/detectron2.git'
 ```
@@ -60,12 +60,13 @@ Hence, we assume that you have a W&B account.
  
 ### 1 Mpx
 ```Bash
-TRAIN_WORKERS_PER_GPU=6 
+BATCH_SIZE_PER_GPU=4 
+TRAIN_WORKERS_PER_GPU=6
 EVAL_WORKERS_PER_GPU=2 
 GPU_NUMBER=$(nvidia-smi --list-gpus | wc -l) 
+```
+```Bash
 GPUS=$(seq -s "," 0 $((GPU_NUMBER - 1))) 
-BATCH_SIZE_PER_GPU=4 
-DATA_DIR=/home/pengys/Data/gen4/ 
 lr=$(python -c "import math; print(2e-4*math.sqrt(${BATCH_SIZE_PER_GPU}*${GPU_NUMBER}/8))") 
 python train.py model=rnndet dataset=gen4 dataset.path=${DATA_DIR} wandb.project_name=SAST 
 wandb.group_name=1mpx hardware.num_workers.train=${TRAIN_WORKERS_PER_GPU} 
@@ -82,6 +83,8 @@ GPUS=$(seq -s "," 0 $((GPU_NUMBER - 1)))
 BATCH_SIZE_PER_GPU=4 
 DATA_DIR=/home/pengys/Data/gen1/ 
 lr=$(python -c "import math; print(2e-4*math.sqrt(${BATCH_SIZE_PER_GPU}*${GPU_NUMBER}/8))") 
+```
+```Bash
 python train.py model=rnndet dataset=gen1 dataset.path=${DATA_DIR} wandb.project_name=SAST 
 wandb.group_name=gen1 hardware.num_workers.train=${TRAIN_WORKERS_PER_GPU} 
 batch_size.train=${BATCH_SIZE_PER_GPU} hardware.num_workers.eval=${EVAL_WORKERS_PER_GPU} 
@@ -99,12 +102,12 @@ training.learning_rate=${lr} validation.val_check_interval=10000
   Only a single GPU is supported for evaluation
 ### 1 Mpx
 ```Bash
-python validation.py dataset=gen4 dataset.path=${DATA_DIR} checkpoint=${CKPT_PATH} \
+python validation.py dataset=gen4 dataset.path=${DATA_DIR} checkpoint=${CKPT_PATH}
 use_test_set=${USE_TEST} hardware.gpus=${GPU_ID} batch_size.eval=4
 ```
 ### Gen1
 ```Bash
-python validation.py dataset=gen1 dataset.path=${DATA_DIR} checkpoint=${CKPT_PATH} \
+python validation.py dataset=gen1 dataset.path=${DATA_DIR} checkpoint=${CKPT_PATH}
 use_test_set=${USE_TEST} hardware.gpus=${GPU_ID} batch_size.eval=4
 ```
 
