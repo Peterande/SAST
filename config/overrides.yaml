@@ -1,7 +1,6 @@
 # @package _global_
 dataset:
-  # path: /data/chatgod/rvt_gen4/gen4/
-  path: /home/pengys/Data/gen4/
+  path: null
 wandb:
   project_name: SRVT
   group_name: 1mpx

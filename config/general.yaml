@@ -59,4 +59,4 @@ wandb:
   artifact_local_file: null # If specified, will use the provided local filepath instead of downloading it. Required if resuming with DDP.
   resume_only_weights: False
   group_name: ??? # Specify group name of the run
-  project_name: RVT
+  project_name: SAST
