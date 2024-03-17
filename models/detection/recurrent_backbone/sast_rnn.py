@@ -20,8 +20,9 @@ except ImportError:
 
 from data.utils.types import FeatureMap, BackboneFeatures, LstmState, LstmStates
 from models.layers.rnn import DWSConvLSTM2d
-from models.layers.SAST.SAST import (
-    SAST_block,
+from models.layers.SAST.SAST import SAST_block
+
+from models.layers.SAST.ops import (
     nhwC_2_nChw,
     get_downsample_layer_Cf2Cl)
 

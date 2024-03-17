@@ -6,199 +6,21 @@
 # Modified from RVT.
 # ==============================================================================
 
-from enum import Enum, auto
 from functools import partial
-from typing import Optional, Tuple, List, Type
+from typing import Optional, Tuple, List
 
 import math
 import torch
 from omegaconf import DictConfig
 from torch import nn
 
-from .layers import DropPath, LayerNorm
+from .layers import DropPath
 from .layers import get_act_layer, get_norm_layer
-from .layers import to_2tuple, _assert
+from .layers import to_2tuple
+from .ops import window_partition, window_reverse, grid_partition, \
+                 grid_reverse, LayerScale, MLP
 
 
-class PartitionType(Enum):
-    WINDOW = auto()
-    GRID = auto()
-    GLOBAL = auto()
-
-
-def nChw_2_nhwC(x: torch.Tensor):
-    """N C H W -> N H W C
-    """
-    assert x.ndim == 4
-    return x.permute(0, 2, 3, 1).contiguous()
-
-
-def nhwC_2_nChw(x: torch.Tensor):
-    """N H W C -> N C H W
-    """
-    assert x.ndim == 4
-    return x.permute(0, 3, 1, 2).contiguous()
-
-
-class DownsampleBase(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    @staticmethod
-    def output_is_normed():
-        raise NotImplementedError
-
-def get_downsample_layer_Cf2Cl(dim_in: int,
-                               dim_out: int,
-                               downsample_factor: int,
-                               downsample_cfg: DictConfig) -> DownsampleBase:
-    type = downsample_cfg.type
-    if type == 'patch':
-        return ConvDownsampling_Cf2Cl(dim_in=dim_in,
-                                      dim_out=dim_out,
-                                      downsample_factor=downsample_factor,
-                                      downsample_cfg=downsample_cfg)
-    raise NotImplementedError
-
-
-class ConvDownsampling_Cf2Cl(DownsampleBase):
-    """Downsample with input in NCHW [channel-first] format.
-    Output in NHWC [channel-last] format.
-    """
-    def __init__(self,
-                 dim_in: int,
-                 dim_out: int,
-                 downsample_factor: int,
-                 downsample_cfg: DictConfig):
-        super().__init__()
-        assert isinstance(dim_out, int)
-        assert isinstance(dim_in, int)
-        assert downsample_factor in (2, 4, 8)
-
-        norm_affine = downsample_cfg.get('norm_affine', True)
-        overlap = downsample_cfg.get('overlap', True)
-
-        if overlap:
-            kernel_size = (downsample_factor - 1)*2 + 1
-            padding = kernel_size//2
-        else:
-            kernel_size = downsample_factor
-            padding = 0
-        self.conv = nn.Conv2d(in_channels=dim_in,
-                              out_channels=dim_out,
-                              kernel_size=kernel_size,
-                              padding=padding,
-                              stride=downsample_factor,
-                              bias=False,
-                              padding_mode='replicate')
-
-        self.norm = LayerNorm(num_channels=dim_out, eps=1e-5, affine=norm_affine)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.conv(x)
-        x = nChw_2_nhwC(x)
-        x = self.norm(x)
-        return x
-
-    @staticmethod
-    def output_is_normed():
-        return True
-
-
-def get_downsample_layer_Cf2Cl(dim_in: int,
-                               dim_out: int,
-                               downsample_factor: int,
-                               downsample_cfg: DictConfig) -> DownsampleBase:
-    type = downsample_cfg.type
-    if type == 'patch':
-        return ConvDownsampling_Cf2Cl(dim_in=dim_in,
-                                      dim_out=dim_out,
-                                      downsample_factor=downsample_factor,
-                                      downsample_cfg=downsample_cfg)
-    raise NotImplementedError
-
-
-class GLU(nn.Module):
-    def __init__(self,
-                 dim_in: int,
-                 dim_out: int,
-                 channel_last: bool,
-                 act_layer: Type[nn.Module],
-                 bias: bool = True):
-        super().__init__()
-        # Different activation functions / versions of the gated linear unit:
-        # - ReGLU:  Relu
-        # - SwiGLU: Swish/SiLU
-        # - GeGLU:  GELU
-        # - GLU:    Sigmoid
-        # seem to be the most promising once.
-        # Extensive quantitative eval in table 1: https://arxiv.org/abs/2102.11972
-        # Section 2 for explanation and implementation details: https://arxiv.org/abs/2002.05202
-        # NOTE: Pytorch has a native GLU implementation: https://pytorch.org/docs/stable/generated/torch.nn.GLU.html?highlight=glu#torch.nn.GLU
-        proj_out_dim = dim_out*2
-        self.proj = nn.Linear(dim_in, proj_out_dim, bias=bias) if channel_last else \
-            nn.Conv2d(dim_in, proj_out_dim, kernel_size=1, stride=1, bias=bias)
-        self.channel_dim = -1 if channel_last else 1
-
-        self.act_layer = act_layer()
-
-    def forward(self, x: torch.Tensor):
-        x, gate = torch.tensor_split(self.proj(x), 2, dim=self.channel_dim)
-        return x * self.act_layer(gate)
-
-        
-class MLP(nn.Module):
-    def __init__(self,
-                 dim: int,
-                 channel_last: bool,
-                 expansion_ratio: int,
-                 act_layer: Type[nn.Module],
-                 gated: bool = True,
-                 bias: bool = True,
-                 drop_prob: float = 0.):
-        super().__init__()
-        inner_dim = int(dim * expansion_ratio)
-        if gated:
-            # To keep the number of parameters (approx) constant regardless of whether glu == True
-            # Section 2 for explanation: https://arxiv.org/abs/2002.05202
-            #inner_dim = round(inner_dim * 2 / 3)
-            #inner_dim = math.ceil(inner_dim * 2 / 3 / 32) * 32 # multiple of 32
-            #inner_dim = round(inner_dim * 2 / 3 / 32) * 32 # multiple of 32
-            inner_dim = math.floor(inner_dim * 2 / 3 / 32) * 32 # multiple of 32
-            proj_in = GLU(dim_in=dim, dim_out=inner_dim, channel_last=channel_last, act_layer=act_layer, bias=bias)
-        else:
-            proj_in = nn.Sequential(
-                nn.Linear(in_features=dim, out_features=inner_dim, bias=bias) if channel_last else \
-                    nn.Conv2d(in_channels=dim, out_channels=inner_dim, kernel_size=1, stride=1, bias=bias),
-                act_layer(),
-            )
-        self.net = nn.Sequential(
-            proj_in,
-            nn.Dropout(p=drop_prob),
-            nn.Linear(in_features=inner_dim, out_features=dim, bias=bias) if channel_last else \
-                nn.Conv2d(in_channels=inner_dim, out_channels=dim, kernel_size=1, stride=1, bias=bias)
-        )
-        # self.weight = nn.Parameter(torch.ones(1))
-
-
-    def forward(self, x):
-        x = self.net(x)
-        return x
-        # weight = self.weight.sigmoid()
-        # return weight * x + (1 - weight) * x.mean(dim=1, keepdim=True)
-
-
-class LayerScale(nn.Module):
-    def __init__(self, dim: int, init_values: float=1e-5, inplace: bool=False):
-        super().__init__()
-        self.inplace = inplace
-        self.gamma = nn.Parameter(init_values * torch.ones(dim))
-
-    def forward(self, x):
-        gamma = self.gamma
-        return x.mul_(gamma) if self.inplace else x * gamma
-    
-    
 class SAST_block(nn.Module):
     ''' SAST block contains two SAST layers '''
 
@@ -283,7 +105,7 @@ class SAST_block(nn.Module):
         x = x + pos_emb(x)
         x = window_partition(x, self.partition_size).view(self.B, self.N, -1, self.dim) 
         if self.first_block:
-            # Scoring Module 
+            # Scoring Module* 
             scale = self.to_controls(r + 1e-6)[:, None, None, :]  
             scores = self.act(self.to_scores(x)) 
 
@@ -307,6 +129,7 @@ class SAST_block(nn.Module):
         M = len(index_window)
         
         if len(index_token):
+            # MS-WSA (Masked Sparse Window Self-Attention) 
             x = self.win_attn(x, index_window, index_token, padding_index, asy_index, M, self.B, self.enable_CB)
         x = window_reverse(x, self.partition_size, (img_size[0], img_size[1]))
         
@@ -314,7 +137,7 @@ class SAST_block(nn.Module):
 
         ''' Second SAST Layer '''
         if self.first_block:
-            # Reuse scores
+            # Reuse scores* for the second SAST layer
             scores = window_reverse(scores.view_as(x), self.partition_size, (img_size[0], img_size[1]))
             scores = grid_partition(scores, self.partition_size).view(self.B, self.N, -1, self.dim)
 
@@ -329,7 +152,8 @@ class SAST_block(nn.Module):
         x = grid_partition(x, self.partition_size).view(self.B * self.N, -1, self.dim)
         
         M = len(index_window)
-        if len(index_token):  
+        if len(index_token): 
+            # MS-WSA (Masked Sparse Window Self-Attention) 
             x = self.grid_attn(x, index_window, index_token, padding_index, asy_index, M, self.B, self.enable_CB)
         x = grid_reverse(x, self.partition_size, (img_size[0], img_size[1]))
         index_count += len(asy_index) // self.B
@@ -338,32 +162,6 @@ class SAST_block(nn.Module):
     def forward(self, x: torch.Tensor, pos_emb: torch.Tensor, r: torch.Tensor, index_list: List) -> Tuple[torch.Tensor, ...]:
         x, index_count, index_list = self._partition_attn(x, pos_emb, r, index_list)
         return x, index_count, index_list
-    
-
-class PositiveLinear(nn.Module):
-    ''' Linear layer with positive weights'''
-    def __init__(self, in_features, out_features, bias=True):
-        super(PositiveLinear, self).__init__()
-        self.in_features = in_features
-        self.out_features = out_features
-        self.weight = nn.Parameter(torch.Tensor(out_features, in_features))
-        if bias:
-            self.bias = nn.Parameter(torch.Tensor(out_features))
-        else:
-            self.register_parameter('bias', None)
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
-        if self.bias is not None:
-            fan_in, _ = nn.init._calculate_fan_in_and_fan_out(self.weight)
-            bound = 1 / math.sqrt(fan_in)
-            nn.init.uniform_(self.bias, -bound, bound)
-
-    def forward(self, input):
-        # Apply exponential function to ensure weights are positive
-        positive_weights = torch.exp(self.weight)
-        return nn.functional.linear(input, positive_weights, self.bias)
     
 
 class MS_WSA(nn.Module):
@@ -409,7 +207,7 @@ class MS_WSA(nn.Module):
         if len(index_token) == 0: # No selected tokens
             return x.view(*restore_shape)
         
-        # Gather selected tokens
+        # Gather selected tokens, X and XX are used to store the original tokens and selected windows.
         X = x.clone() 
         x = x[index_window].view(-1, C) 
         XX = x.clone() 
@@ -421,7 +219,7 @@ class MS_WSA(nn.Module):
         q, k, v = self.qkv(x).view(M, -1, self.num_heads, self.dim_head * 3).transpose(1, 2).chunk(3, dim=3)
         attn = (q @ k.transpose(-2, -1)) * self.scale
         
-        # Column masking
+        # Column masking, the padded positions are masked.
         attn_map = torch.zeros((XX.shape[0], q.shape[2], self.num_heads), device=x.device, dtype=attn.dtype) 
         attn_map[index_token] = attn.transpose(1, 3).reshape(-1, q.shape[2], self.num_heads) 
         attn_map[padding_index] = -1e4 
@@ -434,23 +232,22 @@ class MS_WSA(nn.Module):
         XX[index_token] = x.view(-1, C)
         x = XX[asy_index] 
 
-        for i, layer in enumerate(self.sub_layers):
-            if i == 1 or i == 5: # DropPath
-                x = shortcut + layer(x)
-                shortcut = x
-            elif i == 3: # MLP
-                x = layer(x).to(X.dtype)
-                if enable_CB: # Context Broadcasting operation
-                    temp_X, temp_XX = torch.zeros_like(X), torch.zeros_like(XX)
-                    temp_XX[asy_index] = x
-                    temp_X[index_window] = temp_XX.view(M, -1, C)
-                    temp_X = temp_X.view(B, -1, C)
-                    temp_X = (0.5 * temp_X + (1 - 0.5) * temp_X.mean(dim=1, keepdim=True)).view(*restore_shape)
-                    x = temp_X[index_window].view(-1, C)[asy_index]
-            else: # LayerScale and LayerNorm
-                x = layer(x)
+        x = shortcut + self.drop1(self.ls1(x))
+        shortcut = x
+        x = self.mlp(x).to(X.dtype)
 
-        # Scatter selected tokens
+        # Context Broadcasting operation
+        if enable_CB: 
+            temp_X, temp_XX = torch.zeros_like(X), torch.zeros_like(XX)
+            temp_XX[asy_index] = x
+            temp_X[index_window] = temp_XX.view(M, -1, C)
+            temp_X = temp_X.view(B, -1, C)
+            temp_X = (0.5 * temp_X + (1 - 0.5) * temp_X.mean(dim=1, keepdim=True)).view(*restore_shape)
+            x = temp_X[index_window].view(-1, C)[asy_index]
+
+        x = shortcut + self.drop2(self.ls2(x))
+
+        # Scatter selected tokens back to the original position.
         XX[asy_index] = x.view(-1, C)
         XX[padding_index] = X[index_window].view(-1, C)[padding_index]
         X[index_window] = XX.view(M, -1, C) 
@@ -459,10 +256,11 @@ class MS_WSA(nn.Module):
 
 
 def get_score_index_2d21d(x: torch.Tensor, d: float, b: float) -> torch.Tensor:
-    '''Thresholding for 2D window index selection'''
+    '''2D window index selection'''
     if x.shape[0] == 1:
         # Batch size 1 is a special case because torch.nonzero returns a 1D tensor already.
         return torch.nonzero(x >= d / (1 + b))[:, 1]
+    # The selected window indices (asychronous indices).
     gt = x >= d / (1 + b)
     index_2d = torch.nonzero(gt)
     index_1d = index_2d[:, 0] * x.shape[-1] + index_2d[:, 1]
@@ -470,11 +268,14 @@ def get_score_index_2d21d(x: torch.Tensor, d: float, b: float) -> torch.Tensor:
 
 
 def get_score_index_with_padding(x: torch.Tensor, d: float, b: float) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    '''Thresholding for 2D token index selection (with paddings)'''
+    '''2D token index selection (w/ and w/o paddings)'''
     gt = x >= d / (1 + b)
     K = torch.sum(gt, dim=1)
+    # The top-k indices are idealized padded token indices.
     top_indices = torch.topk(x, k=K.max(), dim=1, largest=True, sorted=False)[1]
+    # Adding offsets to the top-k indices.
     arange = torch.arange(0, x.shape[0] * x.shape[1], x.shape[1], device=x.device).view(-1, 1)
+    # The actual selected token indices (asychronous indices).
     index_2d = torch.nonzero(gt)
     index_1d = index_2d[:, 0] * x.shape[-1] + index_2d[:, 1]
     return (top_indices + arange).view(-1), index_1d, K
@@ -483,12 +284,12 @@ def get_score_index_with_padding(x: torch.Tensor, d: float, b: float) -> Tuple[t
 def get_non_zero_ratio(x: torch.Tensor) -> torch.Tensor:
     ''' Get the ratio of non-zero elements in each bin for four SAST blocks'''
     '''Input: (B, C, H, W). Output: [(B, C), (B, C), (B, C), (B, C)].'''
-    # Downsample to match the receptive field of each SAST block
+    # Downsample to match the receptive field of each SAST block.
     x_down_4 = torch.nn.functional.max_pool2d(x.float(), kernel_size=4, stride=4)
     x_down_8 = torch.nn.functional.max_pool2d(x_down_4, kernel_size=2, stride=2)
     x_down_16 = torch.nn.functional.max_pool2d(x_down_8, kernel_size=2, stride=2)
     x_down_32 = torch.nn.functional.max_pool2d(x_down_16, kernel_size=2, stride=2)
-    # Count the number of non-zero elements in each bin 
+    # Count the number of non-zero elements in each bin.
     num_nonzero_1 = torch.sum(torch.sum(x_down_4 != 0, dtype=torch.int16, dim=[2]), dtype=torch.int16, dim=-1)
     num_nonzero_2 = torch.sum(torch.sum(x_down_8 != 0, dtype=torch.int16, dim=[2]), dtype=torch.int16, dim=-1)
     num_nonzero_3 = torch.sum(torch.sum(x_down_16 != 0, dtype=torch.int16, dim=[2]), dtype=torch.int16, dim=-1)
@@ -497,40 +298,31 @@ def get_non_zero_ratio(x: torch.Tensor) -> torch.Tensor:
     result2 = x.shape[0] / x_down_8.numel() * num_nonzero_2.float()
     result3 = x.shape[0] / x_down_16.numel() * num_nonzero_3.float()
     result4 = x.shape[0] / x_down_32.numel() * num_nonzero_4.float()
+    # Return the ratio of non-zero elements in each bin at four scales.
     return [result1, result2, result3, result4]
 
 
-def window_partition(x: torch.Tensor, window_size: Tuple[int, int]) -> torch.Tensor:
-    B, H, W, C = x.shape
-    _assert(H % window_size[0] == 0, f'height ({H}) must be divisible by window ({window_size[0]})')
-    _assert(W % window_size[1] == 0, f'width ({W}) must be divisible by window ({window_size[1]})')
-    x = x.view(B, H // window_size[0], window_size[0], W // window_size[1], window_size[1], C)
-    windows = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(-1, window_size[0], window_size[1], C)
-    return windows
+class PositiveLinear(nn.Module):
+    ''' Linear layer with positive weights'''
+    def __init__(self, in_features, out_features, bias=True):
+        super(PositiveLinear, self).__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.weight = nn.Parameter(torch.Tensor(out_features, in_features))
+        if bias:
+            self.bias = nn.Parameter(torch.Tensor(out_features))
+        else:
+            self.register_parameter('bias', None)
+        self.reset_parameters()
 
+    def reset_parameters(self):
+        nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+        if self.bias is not None:
+            fan_in, _ = nn.init._calculate_fan_in_and_fan_out(self.weight)
+            bound = 1 / math.sqrt(fan_in)
+            nn.init.uniform_(self.bias, -bound, bound)
 
-def window_reverse(windows, window_size: Tuple[int, int], img_size: Tuple[int, int]) -> torch.Tensor:
-    H, W = img_size
-    C = windows.shape[-1]
-    x = windows.view(-1, H // window_size[0], W // window_size[1], window_size[0], window_size[1], C)
-    x = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(-1, H, W, C)
-    return x
-
-
-def grid_partition(x, grid_size: Tuple[int, int]) -> torch.Tensor:
-    B, H, W, C = x.shape
-    _assert(H % grid_size[0] == 0, f'height {H} must be divisible by grid {grid_size[0]}')
-    _assert(W % grid_size[1] == 0, f'width {W} must be divisible by grid {grid_size[1]}')
-    x = x.view(B, grid_size[0], H // grid_size[0], grid_size[1], W // grid_size[1], C)
-    windows = x.permute(0, 2, 4, 1, 3, 5).contiguous().view(-1, grid_size[0], grid_size[1], C)
-    return windows
-
-
-def grid_reverse(windows, grid_size: Tuple[int, int], img_size: Tuple[int, int]) -> torch.Tensor:
-    H, W = img_size
-    C = windows.shape[-1]
-    x = windows.view(-1, H // grid_size[0], W // grid_size[1], grid_size[0], grid_size[1], C)
-    x = x.permute(0, 3, 1, 4, 2, 5).contiguous().view(-1, H, W, C)
-    return x
-
-
+    def forward(self, input):
+        # Apply exponential function to ensure weights are positive
+        positive_weights = torch.exp(self.weight)
+        return nn.functional.linear(input, positive_weights, self.bias)
