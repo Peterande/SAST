@@ -1,7 +1,6 @@
 defaults:
-  - experiment/gen4/base
   - general
-  - overrides
-  - dataset: gen4
+  - dataset: ???
   - model: rnndet
   - optional model/dataset: ${model}_${dataset}
+  

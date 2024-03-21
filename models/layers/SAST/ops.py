@@ -218,10 +218,3 @@ def grid_reverse(windows, grid_size: Tuple[int, int], img_size: Tuple[int, int])
     x = windows.view(-1, H // grid_size[0], W // grid_size[1], grid_size[0], grid_size[1], C)
     x = x.permute(0, 3, 1, 4, 2, 5).contiguous().view(-1, H, W, C)
     return x
-
-
-
-
-
-
-

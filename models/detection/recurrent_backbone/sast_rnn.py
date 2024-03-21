@@ -161,7 +161,7 @@ class RNNDetector(BaseDetector):
             P.append(p)
         return output, states, P
 
-class MaxVitAttentionPairCl(nn.Module):
+class SASTAttentionPairCl(nn.Module):
     def __init__(self,
                  dim: int,
                  skip_first_norm: bool,
@@ -242,7 +242,7 @@ class RNNDetectorStage(nn.Module):
                                                            dim_out=stage_dim,
                                                            downsample_factor=spatial_downsample_factor,
                                                            downsample_cfg=downsample_cfg)
-        blocks = [MaxVitAttentionPairCl(dim=stage_dim,
+        blocks = [SASTAttentionPairCl(dim=stage_dim,
                                         skip_first_norm=i == 0 and self.downsample_cf2cl.output_is_normed(),
                                         attention_cfg=attention_cfg, first_block=i == 0) for i in range(num_blocks)]
         self.att_blocks = nn.ModuleList(blocks)

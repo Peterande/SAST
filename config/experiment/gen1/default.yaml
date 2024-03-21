@@ -1,6 +1,6 @@
 # @package _global_
 defaults:
-  - /model/maxvit_yolox: default
+  - /model/sast_yolox: default
 
 training:
   precision: 16

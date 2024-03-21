@@ -4,7 +4,7 @@ defaults:
   - _self_
 
 checkpoint: ???
-use_test_set: False
+use_test_set: True
 hardware:
   num_workers:
     eval: 4
@@ -13,3 +13,11 @@ batch_size:
   eval: 8
 training:
   precision: 16
+model:
+  postprocess:
+    confidence_threshold: 0.001
+DATA_DIR=/home/pengys/Data/gen4 
+CKPT_PATH=/home/pengys/Code/SAST/46.995.ckpt 
+USE_TEST=1 
+GPU_ID=1 
+python validation.py dataset=gen4 dataset.path=${DATA_DIR} checkpoint=${CKPT_PATH} use_test_set=${USE_TEST} hardware.gpus=${GPU_ID} batch_size.eval=4 +experiment/gen4="base.yaml" model.postprocess.confidence_threshold=0.001

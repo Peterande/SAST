@@ -192,10 +192,7 @@ class Module(pl.LightningModule):
 
         assert losses is not None
         assert 'loss' in losses
-        # self.trainer._logger_connector.progress_bar_metrics['iou_loss'] = self.smooth_loss(losses['iou_loss'].clone().detach(), 1).item()
-        # self.trainer._logger_connector.progress_bar_metrics['conf_loss'] = self.smooth_loss(losses['conf_loss'].clone().detach(), 2).item()
-        # self.trainer._logger_connector.progress_bar_metrics['cls_loss'] = self.smooth_loss(losses['cls_loss'].clone().detach(), 3).item()
-        # self.trainer._logger_connector.progress_bar_metrics['token_num'] = P.clone().detach().item() # self.smooth_loss(P.clone().detach(), 4).item()
+
         self.smooth_loss(P, 3)
 
         self.trainer._logger_connector.progress_bar_metrics['SN'] = self.p_loss // 1

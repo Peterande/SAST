@@ -66,28 +66,28 @@ EVAL_WORKERS_PER_GPU=2
 GPU_NUMBER=$(nvidia-smi --list-gpus | wc -l) 
 GPUS=$(seq -s "," 0 $((GPU_NUMBER - 1))) 
 lr=$(python -c "import math; print(2e-4*math.sqrt(${BATCH_SIZE_PER_GPU}*${GPU_NUMBER}/8))") 
+DATA_DIR=??? 
 ```
 ```Bash
 python train.py model=rnndet dataset=gen4 dataset.path=${DATA_DIR} wandb.project_name=SAST 
-wandb.group_name=1mpx hardware.num_workers.train=${TRAIN_WORKERS_PER_GPU} 
-batch_size.train=${BATCH_SIZE_PER_GPU} hardware.num_workers.eval=${EVAL_WORKERS_PER_GPU} 
-batch_size.eval=${BATCH_SIZE_PER_GPU} hardware.gpus=[${GPUS}] 
+wandb.group_name=1mpx hardware.num_workers.train=2 batch_size.train=${BATCH_SIZE_PER_GPU} 
+hardware.num_workers.eval=2 batch_size.eval=${BATCH_SIZE_PER_GPU} 
+hardware.gpus=[${GPUS}] +experiment/gen4="base.yaml" 
 training.learning_rate=${lr} validation.val_check_interval=10000
 ```
 ### Gen1
 ```Bash
 BATCH_SIZE_PER_GPU=4 
-TRAIN_WORKERS_PER_GPU=2 
-EVAL_WORKERS_PER_GPU=2 
 GPU_NUMBER=$(nvidia-smi --list-gpus | wc -l) 
 GPUS=$(seq -s "," 0 $((GPU_NUMBER - 1)))  
 lr=$(python -c "import math; print(2e-4*math.sqrt(${BATCH_SIZE_PER_GPU}*${GPU_NUMBER}/8))") 
+DATA_DIR=??? 
 ```
 ```Bash
 python train.py model=rnndet dataset=gen1 dataset.path=${DATA_DIR} wandb.project_name=SAST 
-wandb.group_name=gen1 hardware.num_workers.train=${TRAIN_WORKERS_PER_GPU} 
-batch_size.train=${BATCH_SIZE_PER_GPU} hardware.num_workers.eval=${EVAL_WORKERS_PER_GPU} 
-batch_size.eval=${BATCH_SIZE_PER_GPU} hardware.gpus=[${GPUS}] 
+wandb.group_name=gen1 hardware.num_workers.train=2 batch_size.train=${BATCH_SIZE_PER_GPU} 
+hardware.num_workers.eval=2 batch_size.eval=${BATCH_SIZE_PER_GPU} 
+hardware.gpus=[${GPUS}] +experiment/gen1="base.yaml" 
 training.learning_rate=${lr} validation.val_check_interval=10000
 ```
 
@@ -99,19 +99,25 @@ training.learning_rate=${lr} validation.val_check_interval=10000
   - `USE_TEST=0` to evaluate on the validation set
 - Set `GPU_ID` to the PCI BUS ID of the GPU that you want to use. e.g. `GPU_ID=0`.
   Only a single GPU is supported for evaluation
+```Bash
+DATA_DIR=??? 
+CKPT_PATH=??? 
+USE_TEST=??? 
+GPU_ID=??? 
+```
 ### 1 Mpx
 ```Bash
-python validation.py dataset=gen4 dataset.path=${DATA_DIR} checkpoint=${CKPT_PATH}
-use_test_set=${USE_TEST} hardware.gpus=${GPU_ID} batch_size.eval=4
+python validation.py dataset=gen4 dataset.path=${DATA_DIR} checkpoint=${CKPT_PATH} 
+use_test_set=${USE_TEST} hardware.gpus=${GPU_ID} batch_size.eval=4 +experiment/gen4="base.yaml"
 ```
 ### Gen1
 ```Bash
-python validation.py dataset=gen1 dataset.path=${DATA_DIR} checkpoint=${CKPT_PATH}
-use_test_set=${USE_TEST} hardware.gpus=${GPU_ID} batch_size.eval=4
+python validation.py dataset=gen1 dataset.path=${DATA_DIR} checkpoint=${CKPT_PATH} 
+use_test_set=${USE_TEST} hardware.gpus=${GPU_ID} batch_size.eval=4 +experiment/gen1="base.yaml"
 ```
 
 ## Code Acknowledgments
 This project has used code from the following projects:
 - [RVT](https://github.com/uzh-rpg/RVT) for the RVT architecture implementation in Pytorch
-- [timm](https://github.com/huggingface/pytorch-image-models) for the MaxViT layer implementation in Pytorch
+- [timm](https://github.com/huggingface/pytorch-image-models) for the original MaxViT layer implementation in Pytorch
 - [YOLOX](https://github.com/Megvii-BaseDetection/YOLOX) for the detection PAFPN/head
