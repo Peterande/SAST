@@ -17,7 +17,7 @@ def get_ckpt_callback(config: DictConfig) -> ModelCheckpoint:
     ckpt_callback_monitor = prefix + '/' + metric
     filename_monitor_str = prefix + '_' + metric
 
-    ckpt_filename = 'epoch={epoch:03d}-step={step}-' + filename_monitor_str + '={' + ckpt_callback_monitor + ':.2f}'
+    ckpt_filename = 'epoch={epoch:03d}-step={step}-' + filename_monitor_str + '={' + ckpt_callback_monitor + ':.3f}'
     cktp_callback = ModelCheckpoint(
         monitor=ckpt_callback_monitor,
         filename=ckpt_filename,
