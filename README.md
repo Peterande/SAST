@@ -52,6 +52,16 @@ To evaluate or train SAST you will need to download the required preprocessed da
 
 You may also pre-process the dataset yourself by following the [instructions](scripts/genx/README.md).
 
+## Pre-trained Checkpoints
+### 1 Mpx
+<table><tbody>
+<th valign="bottom"></th>
+<th valign="bottom">SAST</th>
+<tr><td align="left">pre-trained checkpoint</td>
+<td align="center"><a href="https://drive.google.com/file/d/1LLUzODRfmfzntAg08jYUwb8JZ0dBFNcs/view?usp=drive_link">download</a></td>
+</tr>
+</tbody></table>
+
 ## Training
 - Set `DATA_DIR` as the path to either the 1 Mpx or Gen1 dataset directory
 - The training code uses [W&B](https://wandb.ai/) for logging during the training.
