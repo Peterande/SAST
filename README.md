@@ -1,4 +1,4 @@
-# SAST: Scene Adaptive Sparse Transformer for Event-based Object Detection
+# [SAST: Scene Adaptive Sparse Transformer for Event-based Object Detection](https://arxiv.org/abs/2404.01882)
 <p align="center">
   <img src="figures/Fig1.png" width="750">
 </p>
