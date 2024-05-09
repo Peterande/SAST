@@ -53,10 +53,10 @@ To evaluate or train SAST you will need to download the required preprocessed da
 You may also pre-process the dataset yourself by following the [instructions](scripts/genx/README.md).
 
 ## Pre-trained Checkpoints
-### 1 Mpx
+### SAST
 <table><tbody>
 <th valign="bottom"></th>
-<th valign="bottom">SAST</th>
+<th valign="bottom">1Mpx</th>
 <th valign="bottom">Gen1</th>
 <tr><td align="left">pre-trained checkpoint</td>
 <td align="center"><a href="https://drive.google.com/file/d/1LLUzODRfmfzntAg08jYUwb8JZ0dBFNcs/view?usp=drive_link">download</a></td>
