@@ -57,8 +57,10 @@ You may also pre-process the dataset yourself by following the [instructions](sc
 <table><tbody>
 <th valign="bottom"></th>
 <th valign="bottom">SAST</th>
+<th valign="bottom">Gen1</th>
 <tr><td align="left">pre-trained checkpoint</td>
 <td align="center"><a href="https://drive.google.com/file/d/1LLUzODRfmfzntAg08jYUwb8JZ0dBFNcs/view?usp=drive_link">download</a></td>
+<td align="center"><a href="https://github.com/Peterande/SAST">download</a></td>
 </tr>
 </tbody></table>
 
