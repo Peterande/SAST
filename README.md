@@ -3,7 +3,7 @@
   <img src="figures/Fig1.png" width="750">
 </p>
 This is the official Pytorch implementation of the CVPR 2024 paper "Scene Adaptive Sparse Transformer for Event-based Object Detection"
-**Probably the first sparse transformer to implement window-token co-sparsification. Feel free to use its principle to sparse whatever you want.**
+##Probably the first sparse transformer to implement window-token co-sparsification. Feel free to use its principle to sparse whatever you want.
 
 ```bibtex
 @InProceedings{peng2024sast,
